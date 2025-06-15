@@ -24,6 +24,7 @@ export class AppStack extends cdk.Stack {
   public readonly glueS3Crawler: glue_alpha.Crawler;
   public readonly redshiftDataLakeAccessRole: iam.Role;
   public readonly auroraRedshiftIntegration: rds.CfnIntegration;
+  public readonly quickSightRole: iam.Role;
 
 
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
@@ -60,7 +61,7 @@ export class AppStack extends cdk.Stack {
       // but ensure it's globally unique or let CDK handle full uniqueness.
       removalPolicy: cdk.RemovalPolicy.DESTROY,
       autoDeleteObjects: true, // Required if removalPolicy is DESTROY
-      versioned: true,
+      versioned: false, // Changed from true to false as per request
       encryption: s3.BucketEncryption.S3_MANAGED,
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
     });
@@ -77,16 +78,24 @@ export class AppStack extends cdk.Stack {
         version: rds.AuroraMysqlEngineVersion.VER_3_03_0, // Specify your desired Aurora MySQL version
       }),
       credentials: rds.Credentials.fromGeneratedSecret('MasterUser'), // Manages a secret in Secrets Manager
-      instanceProps: {
+      vpc: this.vpc, // Moved from instanceProps
+      vpcSubnets: { // Moved from instanceProps
+        subnetType: ec2.SubnetType.PRIVATE_ISOLATED, // Use isolated subnets for the database
+      },
+      writer: rds.ClusterInstance.provisioned('WriterInstance', {
         instanceType: ec2.InstanceType.of(
           ec2.InstanceClass.BURSTABLE3,
           ec2.InstanceSize.SMALL
         ),
-        vpc: this.vpc,
-        vpcSubnets: {
-          subnetType: ec2.SubnetType.PRIVATE_ISOLATED, // Use isolated subnets for the database
-        },
-      },
+      }),
+      readers: [
+        rds.ClusterInstance.provisioned('ReaderInstance1', {
+          instanceType: ec2.InstanceType.of(
+            ec2.InstanceClass.BURSTABLE3,
+            ec2.InstanceSize.SMALL
+          ),
+        }),
+      ],
       removalPolicy: cdk.RemovalPolicy.DESTROY,
       // For Zero-ETL, you might need to configure a cluster parameter group
       // to enable features like binary logging (e.g., binlog_format = 'ROW').
@@ -153,18 +162,60 @@ export class AppStack extends cdk.Stack {
     // Ensure Workgroup depends on Namespace
     this.redshiftWorkgroup.node.addDependency(this.redshiftNamespace);
 
-    // Outputs for Redshift Serverless
+    // --- Consolidated Stack Outputs ---
+    // S3
+    // RawDataBucketName is already defined earlier
+
+    // Aurora
+    // AuroraClusterEndpoint is already defined earlier
+    // AuroraClusterSecretArn is already defined earlier (conditional)
+    new cdk.CfnOutput(this, 'AuroraClusterIdentifier', {
+      value: this.auroraCluster.clusterIdentifier,
+      description: 'Aurora MySQL Cluster Identifier',
+    });
+
+    // Redshift Serverless
     new cdk.CfnOutput(this, 'RedshiftNamespaceName', {
-      value: this.redshiftNamespace.namespaceName,
+      value: this.redshiftNamespace.namespaceName, // This is the L2 property for the name
       description: 'Redshift Serverless Namespace Name',
     });
     new cdk.CfnOutput(this, 'RedshiftWorkgroupName', {
-      value: this.redshiftWorkgroup.workgroupName,
+      value: this.redshiftWorkgroup.workgroupName, // This is the L2 property for the name
       description: 'Redshift Serverless Workgroup Name',
     });
-    new cdk.CfnOutput(this, 'RedshiftAdminSecretArnOutput', {
+    new cdk.CfnOutput(this, 'RedshiftAdminSecretArn', { // Renamed from RedshiftAdminSecretArnOutput
       value: this.redshiftAdminSecret.secretArn,
       description: 'ARN of the Redshift Admin User Password Secret',
+    });
+
+    // Glue and Lake Formation
+    new cdk.CfnOutput(this, 'GlueDatabaseName', {
+      value: this.glueDatabase.databaseName,
+      description: 'Name of the Glue Database',
+    });
+    new cdk.CfnOutput(this, 'GlueCrawlerName', {
+      value: this.glueS3Crawler.crawlerName, // Use the .crawlerName property for physical name
+      description: 'Name of the Glue S3 Crawler',
+    });
+    new cdk.CfnOutput(this, 'LakeFormationS3AccessRoleArn', {
+      value: this.lakeFormationS3Role.roleArn,
+      description: 'ARN of the IAM Role for Lake Formation S3 access',
+    });
+    new cdk.CfnOutput(this, 'RedshiftDataLakeAccessRoleArn', {
+      value: this.redshiftDataLakeAccessRole.roleArn,
+      description: 'ARN of the IAM Role for Redshift to access data via Lake Formation',
+    });
+
+    // Zero-ETL Integration
+    new cdk.CfnOutput(this, 'AuroraRedshiftIntegrationArn', { // Changed from ZeroEtlIntegrationName and value
+      value: this.auroraRedshiftIntegration.attrIntegrationArn, // Outputting the ARN
+      description: 'ARN of the Zero-ETL Integration between Aurora and Redshift',
+    });
+
+    // QuickSight
+    new cdk.CfnOutput(this, 'QuickSightAccessRoleArn', { // Renamed from QuickSightRoleArn
+      value: this.quickSightRole.roleArn,
+      description: 'ARN of the IAM Role for QuickSight access',
     });
 
     // --- Glue and Lake Formation Setup ---
@@ -292,65 +343,98 @@ export class AppStack extends cdk.Stack {
     });
 
 
-    // --- Stack Outputs ---
-    new cdk.CfnOutput(this, 'GlueDatabaseName', {
-      value: this.glueDatabase.databaseName,
-      description: 'Name of the Glue Database',
-    });
-    new cdk.CfnOutput(this, 'GlueS3CrawlerName', {
-      value: this.glueS3Crawler.name,
-      description: 'Name of the Glue S3 Crawler',
-    });
-    new cdk.CfnOutput(this, 'LakeFormationS3RoleArn', {
-      value: this.lakeFormationS3Role.roleArn,
-      description: 'ARN of the IAM Role for Lake Formation S3 access',
-    });
-    new cdk.CfnOutput(this, 'RedshiftDataLakeAccessRoleArn', {
-      value: this.redshiftDataLakeAccessRole.roleArn,
-      description: 'ARN of the IAM Role for Redshift to access data via Lake Formation',
-    });
+    // The code that defines your stack goes here, including resource definitions...
+    // ... (previous resource definitions) ...
 
-    // The code that defines your stack goes here
 
-    // --- Zero-ETL Integration between Aurora and Redshift ---
-    // Note: Ensure Aurora cluster and Redshift Namespace ARNs are available.
-    // The RDS L2 construct for DatabaseCluster (`this.auroraCluster`) exposes `clusterArn`.
-    // The Redshift Alpha L2 construct for Namespace (`this.redshiftNamespace`) should expose `namespaceArn` or similar.
-    // If `namespaceArn` is not directly available on `this.redshiftNamespace` from the alpha L2,
-    // we might need to construct it or use the `namespaceId` to form it.
-    // For now, assuming `this.redshiftNamespace.namespaceArn` is available.
-    // A common pattern for ARNs if not directly on construct:
-    // `arn:${this.partition}:redshift-serverless:${this.region}:${this.account}:namespace/${this.redshiftNamespace.namespaceId}`
-
-    // Check if redshiftNamespace.namespaceArn is available, otherwise construct it.
-    // The `@aws-cdk/aws-redshift-alpha.Namespace` construct has `attrNamespaceArn`
+    // --- Zero-ETL Integration (defined before QuickSight role that might use its output) ---
     const redshiftNamespaceArn = this.redshiftNamespace.attrNamespaceArn;
-
-
     this.auroraRedshiftIntegration = new rds.CfnIntegration(this, 'AuroraRedshiftZeroEtlIntegration', {
       sourceArn: this.auroraCluster.clusterArn,
       targetArn: redshiftNamespaceArn,
-      integrationName: `aurora-rs-etl-${this.stackName}`.toLowerCase().replace(/[^a-z0-9-]/g, '-').substring(0, 60), // Max 60 chars
-      // kmsKeyId: 'alias/aws/rds', // Optional: Specify a KMS key for the integration
-      // additionalEncryptionContext: { // Optional
-      //   'ContextKey': 'ContextValue'
-      // },
-      // tags: [{ key: 'Name', value: 'MyZeroEtlIntegration' }] // Optional
+      integrationName: `aurora-rs-etl-${this.stackName}`.toLowerCase().replace(/[^a-z0-9-]/g, '-').substring(0, 60),
     });
-
-    // Ensure dependencies if not automatically inferred by ARNs
     this.auroraRedshiftIntegration.addDependency(this.auroraCluster.node.defaultChild as cdk.CfnResource);
-    // The redshiftNamespace is an L2 alpha, its default child might not be the CfnNamespace directly.
-    // A safer way to depend on the L2 construct completing:
     this.auroraRedshiftIntegration.node.addDependency(this.redshiftNamespace);
 
-
-    new cdk.CfnOutput(this, 'ZeroEtlIntegrationName', {
-      value: this.auroraRedshiftIntegration.integrationName,
-      description: 'Name of the Zero-ETL Integration between Aurora and Redshift',
+    // --- IAM Role for QuickSight (defined after resources it references) ---
+    this.quickSightRole = new iam.Role(this, 'QuickSightRedshiftLakeFormationAccessRole', {
+      assumedBy: new iam.ServicePrincipal('quicksight.amazonaws.com'),
+      description: 'IAM Role for QuickSight to access Redshift and Lake Formation governed data',
+    });
+    const quicksightRedshiftPolicy = new iam.Policy(this, 'QuickSightRedshiftPolicy', { // ... policy statements ...
+      statements: [
+        new iam.PolicyStatement({
+          actions: [
+            'redshift-serverless:GetNamespace',
+            'redshift-serverless:GetWorkgroup',
+          ],
+          resources: [
+            this.redshiftNamespace.attrNamespaceArn,
+            this.redshiftWorkgroup.attrWorkgroupArn,
+          ],
+        }),
+        new iam.PolicyStatement({
+          actions: [
+            'redshift-data:ExecuteStatement',
+            'redshift-data:DescribeStatement',
+            'redshift-data:ListStatements',
+            'redshift-data:GetStatementResult',
+            'redshift-data:CancelStatement',
+          ],
+          resources: [
+            `arn:aws:redshift-serverless:${this.region}:${this.account}:workgroup/${this.redshiftWorkgroup.attrWorkgroupWorkgroupId}`,
+             this.redshiftWorkgroup.attrWorkgroupArn,
+             `${this.redshiftWorkgroup.attrWorkgroupArn}/*`,
+             this.redshiftNamespace.attrNamespaceArn,
+             `${this.redshiftNamespace.attrNamespaceArn}/*`,
+          ],
+        }),
+      ],
+    });
+    this.quickSightRole.attachInlinePolicy(quicksightRedshiftPolicy);
+    const quicksightLakeFormationPolicy = new iam.Policy(this, 'QuickSightLakeFormationPolicy', { // ... policy statements ...
+       statements: [
+        new iam.PolicyStatement({
+          actions: ['lakeformation:GetDataAccess'],
+          resources: ['*'],
+        }),
+        new iam.PolicyStatement({
+          actions: [
+            'glue:GetDatabase',
+            'glue:GetDatabases',
+            'glue:GetTable',
+            'glue:GetTables',
+            'glue:GetPartitions',
+            'glue:SearchTables',
+          ],
+          resources: [
+            this.glueDatabase.databaseArn,
+            `arn:aws:glue:${this.region}:${this.account}:catalog`,
+            `arn:aws:glue:${this.region}:${this.account}:table/${this.glueDatabase.databaseName}/*`,
+          ],
+        }),
+        new iam.PolicyStatement({
+            actions: ['lakeformation:GetLFTag', 'lakeformation:SearchTablesByLFTags', 'lakeformation:SearchDatabasesByLFTags'],
+            resources: ['*'],
+        }),
+      ],
+    });
+    this.quickSightRole.attachInlinePolicy(quicksightLakeFormationPolicy);
+    new lakeformation.CfnPrincipalPermissions(this, 'QuickSightLfDbPermissions', {
+        principal: { dataLakePrincipalIdentifier: this.quickSightRole.roleArn },
+        resource: { database: { catalogId: this.account, name: this.glueDatabase.databaseName } },
+        permissions: ['DESCRIBE'],
+    });
+    new lakeformation.CfnPrincipalPermissions(this, 'QuickSightLfTablePermissions', {
+        principal: { dataLakePrincipalIdentifier: this.quickSightRole.roleArn },
+        resource: { tableWithColumns: { catalogId: this.account, databaseName: this.glueDatabase.databaseName, name: "*", columnWildcard: {} } },
+        permissions: ['SELECT', 'DESCRIBE'],
     });
 
-    // example resource
+
+    // Ensure all other CfnOutputs are defined here, at the end or after their resources.
+    // example resource (commented out)
     // const queue = new sqs.Queue(this, 'AppQueue', {
     //   visibilityTimeout: cdk.Duration.seconds(300)
     // });
