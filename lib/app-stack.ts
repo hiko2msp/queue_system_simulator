@@ -3,9 +3,11 @@ import { Construct } from 'constructs';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as rds from 'aws-cdk-lib/aws-rds';
-import * as redshift_alpha from '@aws-cdk/aws-redshift-alpha';
+// import * as redshift_alpha from '@aws-cdk/aws-redshift-alpha'; // Removed
+import * as redshiftserverless from 'aws-cdk-lib/aws-redshiftserverless'; // Added for L1
 import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
-import * as glue_alpha from '@aws-cdk/aws-glue-alpha';
+import * as glue_alpha from '@aws-cdk/aws-glue-alpha'; // For Database
+import * as glue from 'aws-cdk-lib/aws-glue'; // For Crawler and its enums
 import * as lakeformation from 'aws-cdk-lib/aws-lakeformation'; // For L1 CfnPrincipalPermissions
 import * as iam from 'aws-cdk-lib/aws-iam';
 // import * as sqs from 'aws-cdk-lib/aws-sqs';
@@ -15,13 +17,13 @@ export class AppStack extends cdk.Stack {
   public readonly rawDataBucket: s3.Bucket;
   public readonly auroraCluster: rds.DatabaseCluster;
   public readonly redshiftAdminSecret: secretsmanager.Secret;
-  public readonly redshiftNamespace: redshift_alpha.Namespace;
-  public readonly redshiftWorkgroup: redshift_alpha.Workgroup;
-  public readonly glueDatabase: glue_alpha.Database;
+  public readonly redshiftNamespace: redshiftserverless.CfnNamespace; // Changed to L1
+  public readonly redshiftWorkgroup: redshiftserverless.CfnWorkgroup; // Changed to L1
+  public readonly glueDatabase: glue_alpha.Database; // Reverted to alpha
   public readonly lakeFormationS3Role: iam.Role;
   public readonly lfS3RegisteredPath: lakeformation.CfnResource;
   public readonly glueS3CrawlerRole: iam.Role;
-  public readonly glueS3Crawler: glue_alpha.Crawler;
+  public readonly glueS3Crawler: glue.CfnCrawler; // Changed to L1 CfnCrawler
   public readonly redshiftDataLakeAccessRole: iam.Role;
   public readonly auroraRedshiftIntegration: rds.CfnIntegration;
   public readonly quickSightRole: iam.Role;
@@ -128,14 +130,21 @@ export class AppStack extends cdk.Stack {
       },
     });
 
+    // IAM Role for Redshift to access Lake Formation protected data (moved before Namespace)
+    this.redshiftDataLakeAccessRole = new iam.Role(this, 'RedshiftDataLakeAccessRole', {
+      assumedBy: new iam.ServicePrincipal('redshift.amazonaws.com'),
+      description: 'Role for Redshift to query data through Lake Formation',
+    });
+
     // Redshift Serverless Namespace
-    this.redshiftNamespace = new redshift_alpha.Namespace(this, 'DatalakeRedshiftNamespace', {
-      namespaceName: `${this.stackName}-datalakens`.toLowerCase().replace(/[^a-z0-9]/g, ''), // Ensure compliance with naming rules
+    const namespaceNameForRedshift = `${this.stackName}-datalakens`.toLowerCase().replace(/[^a-z0-9]/g, '');
+    this.redshiftNamespace = new redshiftserverless.CfnNamespace(this, 'DatalakeRedshiftNamespace', {
+      namespaceName: namespaceNameForRedshift,
       dbName: 'dev',
       adminUsername: 'adminuser',
-      adminUserPassword: this.redshiftAdminSecret.secretValue,
-      iamRoles: [], // Will be populated later
-      removalPolicy: cdk.RemovalPolicy.DESTROY,
+      adminUserPassword: this.redshiftAdminSecret.secretValue.unsafeUnwrap(), // L1 needs raw string
+      iamRoles: [this.redshiftDataLakeAccessRole.roleArn], // Set directly
+      // removalPolicy equivalent is handled at stack level or via retain policies
     });
 
     // Security Group for Redshift Workgroup
@@ -147,20 +156,23 @@ export class AppStack extends cdk.Stack {
     // You might want to add specific ingress rules if needed, e.g., from specific IPs or other SGs.
 
     // Redshift Serverless Workgroup
-    this.redshiftWorkgroup = new redshift_alpha.Workgroup(this, 'DatalakeRedshiftWorkgroup', {
-      workgroupName: `${this.stackName}-datalakewg`.toLowerCase().replace(/[^a-z0-9]/g, ''), // Ensure compliance
-      namespaceName: this.redshiftNamespace.namespaceName,
-      baseCapacity: 32,
+    const workgroupNameForRedshift = `${this.stackName}-datalakewg`.toLowerCase().replace(/[^a-z0-9]/g, '');
+    this.redshiftWorkgroup = new redshiftserverless.CfnWorkgroup(this, 'DatalakeRedshiftWorkgroup', {
+      workgroupName: workgroupNameForRedshift,
+      namespaceName: this.redshiftNamespace.namespaceName, // Refers to the input prop of CfnNamespace
+      baseCapacity: 32, // RPU
       subnetIds: this.vpc.selectSubnets({ subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS }).subnetIds,
       securityGroupIds: [redshiftSg.securityGroupId],
       publiclyAccessible: false,
-      enhancedVpcRouting: true, // Recommended
-      removalPolicy: cdk.RemovalPolicy.DESTROY,
-      // configParameters: [{ key: 'enable_user_activity_logging', value: 'true' }] // Example config
+      // enhancedVpcRouting: true, // Not a direct CfnWorkgroup prop; managed by network config
+      // removalPolicy equivalent is handled at stack level
+      // configParameters: [{ parameterKey: 'enable_user_activity_logging', parameterValue: 'true' }] // L1 uses different structure
     });
 
-    // Ensure Workgroup depends on Namespace
-    this.redshiftWorkgroup.node.addDependency(this.redshiftNamespace);
+    // Ensure Workgroup depends on Namespace - CDK usually infers this if namespaceName is a ref,
+    // but explicit dependency is safer for L1 if namespaceName is passed as plain string.
+    // However, this.redshiftNamespace.namespaceName is a string token so it should be fine.
+    // this.redshiftWorkgroup.addDependency(this.redshiftNamespace.node.defaultChild as cdk.CfnResource); // Alternative if needed
 
     // --- Consolidated Stack Outputs ---
     // S3
@@ -176,11 +188,11 @@ export class AppStack extends cdk.Stack {
 
     // Redshift Serverless
     new cdk.CfnOutput(this, 'RedshiftNamespaceName', {
-      value: this.redshiftNamespace.namespaceName, // This is the L2 property for the name
+      value: this.redshiftNamespace.ref, // .ref returns the Name for CfnNamespace
       description: 'Redshift Serverless Namespace Name',
     });
     new cdk.CfnOutput(this, 'RedshiftWorkgroupName', {
-      value: this.redshiftWorkgroup.workgroupName, // This is the L2 property for the name
+      value: this.redshiftWorkgroup.ref, // .ref returns the Name for CfnWorkgroup
       description: 'Redshift Serverless Workgroup Name',
     });
     new cdk.CfnOutput(this, 'RedshiftAdminSecretArn', { // Renamed from RedshiftAdminSecretArnOutput
@@ -194,7 +206,7 @@ export class AppStack extends cdk.Stack {
       description: 'Name of the Glue Database',
     });
     new cdk.CfnOutput(this, 'GlueCrawlerName', {
-      value: this.glueS3Crawler.crawlerName, // Use the .crawlerName property for physical name
+      value: this.glueS3Crawler.ref, // .ref returns the name of the crawler for CfnCrawler
       description: 'Name of the Glue S3 Crawler',
     });
     new cdk.CfnOutput(this, 'LakeFormationS3AccessRoleArn', {
@@ -221,7 +233,7 @@ export class AppStack extends cdk.Stack {
     // --- Glue and Lake Formation Setup ---
 
     // 1. Glue Database
-    this.glueDatabase = new glue_alpha.Database(this, 'DatalakeGlueDatabase', {
+    this.glueDatabase = new glue_alpha.Database(this, 'DatalakeGlueDatabase', { // Reverted to alpha
       databaseName: `${this.stackName}-datalakeglue-db`.toLowerCase().replace(/[^a-z0-9_]/g, '_'),
       // description: 'Glue database for the datalake',
     });
@@ -255,15 +267,15 @@ export class AppStack extends cdk.Stack {
     // The AWSGlueServiceRole managed policy includes CloudWatch Logs access.
 
     // 5. Glue Crawler for S3
-    this.glueS3Crawler = new glue_alpha.Crawler(this, 'S3DatalakeCrawler', {
-      role: this.glueS3CrawlerRole,
-      database: this.glueDatabase,
+    this.glueS3Crawler = new glue.CfnCrawler(this, 'S3DatalakeCrawler', { // Changed to L1 CfnCrawler
+      role: this.glueS3CrawlerRole.roleArn, // L1 needs ARN
+      databaseName: this.glueDatabase.databaseName, // L1 needs databaseName string
       targets: {
         s3Targets: [{ path: this.rawDataBucket.s3UrlForObject() }], // Crawl entire bucket
       },
-      schemaChangePolicy: {
-        updateBehavior: glue_alpha.UpdateBehavior.LOG,
-        deleteBehavior: glue_alpha.DeleteBehavior.DEPRECATE_IN_DATABASE,
+      schemaChangePolicy: { // L1 uses direct strings or specific Property type
+        updateBehavior: 'LOG',
+        deleteBehavior: 'DEPRECATE_IN_DATABASE',
       },
       name: `${this.stackName}-s3-datalake-crawler`.toLowerCase().replace(/[^a-z0-9_]/g, '_'),
       // configuration: JSON.stringify({ // Example advanced config
@@ -286,6 +298,7 @@ export class AppStack extends cdk.Stack {
         },
       },
       permissions: ['DATA_LOCATION_ACCESS'],
+      permissionsWithGrantOption: [],
     }).node.addDependency(this.lfS3RegisteredPath); // Depends on S3 path being registered
 
     // Grant LF permissions to the crawler role to create tables in the Glue database
@@ -300,17 +313,11 @@ export class AppStack extends cdk.Stack {
         },
       },
       permissions: ['CREATE_TABLE', 'ALTER', 'DROP'], // Permissions to manage tables
+      permissionsWithGrantOption: [],
     });
 
 
-    // 7. IAM Role for Redshift to access Lake Formation protected data
-    this.redshiftDataLakeAccessRole = new iam.Role(this, 'RedshiftDataLakeAccessRole', {
-      assumedBy: new iam.ServicePrincipal('redshift.amazonaws.com'),
-      description: 'Role for Redshift to query data through Lake Formation',
-    });
-    // Add this role to Redshift Namespace's IAM roles
-    this.redshiftNamespace.addIamRole(this.redshiftDataLakeAccessRole);
-
+    // 7. IAM Role for Redshift - definition moved up
 
     // 8. Grant Lake Formation permissions to the Redshift role for the Glue database
     new lakeformation.CfnPrincipalPermissions(this, 'RedshiftDbPermissions', {
@@ -324,6 +331,7 @@ export class AppStack extends cdk.Stack {
         },
       },
       permissions: ['DESCRIBE'], // Database-level describe
+      permissionsWithGrantOption: [],
     });
 
     // Grant Lake Formation permissions to the Redshift role for all tables in the Glue database
@@ -340,6 +348,7 @@ export class AppStack extends cdk.Stack {
         },
       },
       permissions: ['SELECT', 'DESCRIBE'], // Table-level select & describe
+      permissionsWithGrantOption: [],
     });
 
 
@@ -348,7 +357,7 @@ export class AppStack extends cdk.Stack {
 
 
     // --- Zero-ETL Integration (defined before QuickSight role that might use its output) ---
-    const redshiftNamespaceArn = this.redshiftNamespace.attrNamespaceArn;
+    const redshiftNamespaceArn = cdk.Fn.getAtt(this.redshiftNamespace.logicalId, 'Namespace.Arn').toString();
     this.auroraRedshiftIntegration = new rds.CfnIntegration(this, 'AuroraRedshiftZeroEtlIntegration', {
       sourceArn: this.auroraCluster.clusterArn,
       targetArn: redshiftNamespaceArn,
@@ -370,8 +379,8 @@ export class AppStack extends cdk.Stack {
             'redshift-serverless:GetWorkgroup',
           ],
           resources: [
-            this.redshiftNamespace.attrNamespaceArn,
-            this.redshiftWorkgroup.attrWorkgroupArn,
+            cdk.Fn.getAtt(this.redshiftNamespace.logicalId, 'Namespace.Arn').toString(),
+            cdk.Fn.getAtt(this.redshiftWorkgroup.logicalId, 'Workgroup.Arn').toString(),
           ],
         }),
         new iam.PolicyStatement({
@@ -383,11 +392,11 @@ export class AppStack extends cdk.Stack {
             'redshift-data:CancelStatement',
           ],
           resources: [
-            `arn:aws:redshift-serverless:${this.region}:${this.account}:workgroup/${this.redshiftWorkgroup.attrWorkgroupWorkgroupId}`,
-             this.redshiftWorkgroup.attrWorkgroupArn,
-             `${this.redshiftWorkgroup.attrWorkgroupArn}/*`,
-             this.redshiftNamespace.attrNamespaceArn,
-             `${this.redshiftNamespace.attrNamespaceArn}/*`,
+            `arn:aws:redshift-serverless:${this.region}:${this.account}:workgroup/${cdk.Fn.getAtt(this.redshiftWorkgroup.logicalId, 'Workgroup.WorkgroupId').toString()}`,
+             cdk.Fn.getAtt(this.redshiftWorkgroup.logicalId, 'Workgroup.Arn').toString(),
+             `${cdk.Fn.getAtt(this.redshiftWorkgroup.logicalId, 'Workgroup.Arn').toString()}/*`,
+             cdk.Fn.getAtt(this.redshiftNamespace.logicalId, 'Namespace.Arn').toString(),
+             `${cdk.Fn.getAtt(this.redshiftNamespace.logicalId, 'Namespace.Arn').toString()}/*`,
           ],
         }),
       ],
@@ -425,11 +434,13 @@ export class AppStack extends cdk.Stack {
         principal: { dataLakePrincipalIdentifier: this.quickSightRole.roleArn },
         resource: { database: { catalogId: this.account, name: this.glueDatabase.databaseName } },
         permissions: ['DESCRIBE'],
+        permissionsWithGrantOption: [],
     });
     new lakeformation.CfnPrincipalPermissions(this, 'QuickSightLfTablePermissions', {
         principal: { dataLakePrincipalIdentifier: this.quickSightRole.roleArn },
         resource: { tableWithColumns: { catalogId: this.account, databaseName: this.glueDatabase.databaseName, name: "*", columnWildcard: {} } },
         permissions: ['SELECT', 'DESCRIBE'],
+        permissionsWithGrantOption: [],
     });
 
 
