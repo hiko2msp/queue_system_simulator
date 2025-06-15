@@ -200,13 +200,43 @@ export class AppStack extends cdk.Stack {
       description: 'ARN of the Redshift Admin User Password Secret',
     });
 
-    // 1. Glue Database (Moved before CfnOutput)
+    // 1. Glue Database
     this.glueDatabase = new glue_alpha.Database(this, 'DatalakeGlueDatabase', { // Reverted to alpha
       databaseName: `${this.stackName}-datalakeglue-db`.toLowerCase().replace(/[^a-z0-9_]/g, '_'),
       // description: 'Glue database for the datalake',
     });
 
-    // Glue and Lake Formation
+    // 4. IAM Role for Glue Crawler
+    this.glueS3CrawlerRole = new iam.Role(this, 'GlueS3CrawlerRole', {
+      assumedBy: new iam.ServicePrincipal('glue.amazonaws.com'),
+      description: 'Role for Glue S3 crawler',
+      managedPolicies: [
+        iam.ManagedPolicy.fromAwsManagedPolicyName('service-role/AWSGlueServiceRole'),
+      ],
+    });
+    this.rawDataBucket.grantRead(this.glueS3CrawlerRole); // Grant S3 read access
+    // The AWSGlueServiceRole managed policy includes CloudWatch Logs access.
+
+    // 5. Glue Crawler for S3
+    this.glueS3Crawler = new glue.CfnCrawler(this, 'S3DatalakeCrawler', { // Changed to L1 CfnCrawler
+      role: this.glueS3CrawlerRole.roleArn, // L1 needs ARN
+      databaseName: this.glueDatabase.databaseName, // L1 needs databaseName string
+      targets: {
+        s3Targets: [{ path: this.rawDataBucket.s3UrlForObject() }], // Crawl entire bucket
+      },
+      schemaChangePolicy: { // L1 uses direct strings or specific Property type
+        updateBehavior: 'LOG',
+        deleteBehavior: 'DEPRECATE_IN_DATABASE',
+      },
+      name: `${this.stackName}-s3-datalake-crawler`.toLowerCase().replace(/[^a-z0-9_]/g, '_'),
+      // configuration: JSON.stringify({ // Example advanced config
+      //   "Version":1.0,
+      //   "Grouping":{"TableGroupingPolicy":"CombineCompatibleSchemas"},
+      //   "CrawlerOutput":{"Partitions":{"AddOrUpdateBehavior":"InheritFromTable"}}
+      // })
+    });
+
+    // Glue and Lake Formation Outputs
     new cdk.CfnOutput(this, 'GlueDatabaseName', {
       value: this.glueDatabase.databaseName,
       description: 'Name of the Glue Database',
@@ -256,36 +286,6 @@ export class AppStack extends cdk.Stack {
     // Ensure LF role is created before the CfnResource that uses it
     this.lfS3RegisteredPath.node.addDependency(this.lakeFormationS3Role);
 
-
-    // 4. IAM Role for Glue Crawler
-    this.glueS3CrawlerRole = new iam.Role(this, 'GlueS3CrawlerRole', {
-      assumedBy: new iam.ServicePrincipal('glue.amazonaws.com'),
-      description: 'Role for Glue S3 crawler',
-      managedPolicies: [
-        iam.ManagedPolicy.fromAwsManagedPolicyName('service-role/AWSGlueServiceRole'),
-      ],
-    });
-    this.rawDataBucket.grantRead(this.glueS3CrawlerRole); // Grant S3 read access
-    // The AWSGlueServiceRole managed policy includes CloudWatch Logs access.
-
-    // 5. Glue Crawler for S3
-    this.glueS3Crawler = new glue.CfnCrawler(this, 'S3DatalakeCrawler', { // Changed to L1 CfnCrawler
-      role: this.glueS3CrawlerRole.roleArn, // L1 needs ARN
-      databaseName: this.glueDatabase.databaseName, // L1 needs databaseName string
-      targets: {
-        s3Targets: [{ path: this.rawDataBucket.s3UrlForObject() }], // Crawl entire bucket
-      },
-      schemaChangePolicy: { // L1 uses direct strings or specific Property type
-        updateBehavior: 'LOG',
-        deleteBehavior: 'DEPRECATE_IN_DATABASE',
-      },
-      name: `${this.stackName}-s3-datalake-crawler`.toLowerCase().replace(/[^a-z0-9_]/g, '_'),
-      // configuration: JSON.stringify({ // Example advanced config
-      //   "Version":1.0,
-      //   "Grouping":{"TableGroupingPolicy":"CombineCompatibleSchemas"},
-      //   "CrawlerOutput":{"Partitions":{"AddOrUpdateBehavior":"InheritFromTable"}}
-      // })
-    });
 
     // 6. Lake Formation Permissions for Glue Crawler Role
     // Grant LF permissions to the crawler role to access the S3 location
