@@ -75,7 +75,7 @@ export class AppStack extends cdk.Stack {
     // Define an Aurora MySQL database cluster
     this.auroraCluster = new rds.DatabaseCluster(this, 'AuroraDatalakeCluster', {
       engine: rds.DatabaseClusterEngine.auroraMysql({
-        version: rds.AuroraMysqlEngineVersion.VER_3_03_0, // Specify your desired Aurora MySQL version
+        version: rds.AuroraMysqlEngineVersion.VER_3_09_0, // Specify your desired Aurora MySQL version
       }),
       credentials: rds.Credentials.fromGeneratedSecret('MasterUser'), // Manages a secret in Secrets Manager
       vpc: this.vpc, // Moved from instanceProps

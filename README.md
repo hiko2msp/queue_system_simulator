@@ -11,8 +11,8 @@ This project demonstrates building a modern data lake on AWS using the AWS Cloud
 - **AWS IAM**: For defining roles and policies ensuring secure access between services.
 - **Amazon QuickSight**: For business intelligence and visualization (manual setup guidance provided).
 
-### Architecture Diagram (Placeholder)
-`[Architecture Diagram - To be added]`
+## Architecture Diagram
+[View Architecture Diagram](docs/diagram.md)
 
 ### Prerequisites
 - An active AWS Account.
