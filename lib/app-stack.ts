@@ -34,7 +34,7 @@ export class AppStack extends cdk.Stack {
 
     // Define a new VPC
     this.vpc = new ec2.Vpc(this, 'DatalakeVpc', {
-      cidr: '10.0.0.0/16',
+      ipAddresses: ec2.IpAddresses.cidr('10.0.0.0/16'),
       maxAzs: 2,
       subnetConfiguration: [
         {
@@ -200,6 +200,12 @@ export class AppStack extends cdk.Stack {
       description: 'ARN of the Redshift Admin User Password Secret',
     });
 
+    // 1. Glue Database (Moved before CfnOutput)
+    this.glueDatabase = new glue_alpha.Database(this, 'DatalakeGlueDatabase', { // Reverted to alpha
+      databaseName: `${this.stackName}-datalakeglue-db`.toLowerCase().replace(/[^a-z0-9_]/g, '_'),
+      // description: 'Glue database for the datalake',
+    });
+
     // Glue and Lake Formation
     new cdk.CfnOutput(this, 'GlueDatabaseName', {
       value: this.glueDatabase.databaseName,
@@ -232,11 +238,7 @@ export class AppStack extends cdk.Stack {
 
     // --- Glue and Lake Formation Setup ---
 
-    // 1. Glue Database
-    this.glueDatabase = new glue_alpha.Database(this, 'DatalakeGlueDatabase', { // Reverted to alpha
-      databaseName: `${this.stackName}-datalakeglue-db`.toLowerCase().replace(/[^a-z0-9_]/g, '_'),
-      // description: 'Glue database for the datalake',
-    });
+    // 1. Glue Database - MOVED EARLIER
 
     // 2. IAM Role for Lake Formation to access S3
     this.lakeFormationS3Role = new iam.Role(this, 'LakeFormationS3AccessRole', {
