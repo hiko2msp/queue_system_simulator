@@ -8,6 +8,8 @@ on:
 jobs:
   build-and-type-check:
     runs-on: ubuntu-latest
+    environment:
+      name: dev
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -28,6 +30,8 @@ jobs:
       id-token: write
       contents: read
     runs-on: ubuntu-latest
+    environment:
+      name: dev
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
