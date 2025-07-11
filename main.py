@@ -10,6 +10,7 @@ def main():
     parser.add_argument("csv_file", help="リクエストデータが含まれるCSVファイルへのパス")
     parser.add_argument("-w", "--num_workers", type=int, default=1, help="ワーカーの数 (デフォルト: 1)")
     parser.add_argument("-q", "--queue_size", type=int, default=None, help="キューの最大サイズ (デフォルト: 無制限)")
+    parser.add_argument("--animation", action="store_true", help="アニメーションモードを有効にする")
     # TODO: 将来の拡張: アドミッションコントロール戦略を選択する引数を追加
     # parser.add_argument("-s", "--admission_strategy", type=str, default="simple_rejection", choices=["simple_rejection", "drop_oldest"], help="アドミッションコントロール戦略")
     # TODO: 将来の拡張: 複数のキュータイプや設定を引数で指定できるようにする (例: --queues "priority:high_q_size=10,normal:low_q_size=100")
@@ -39,10 +40,20 @@ def main():
     simulator = Simulator(
         requests=requests,
         num_workers=args.num_workers,
-        queue_max_size=args.queue_size
+        queue_max_size=args.queue_size,
+        animation_mode=args.animation
+        # animation_update_interval_seconds はSimulatorのデフォルト値(1.0秒)を使用
     )
 
-    completed_tasks = simulator.run()
+    if args.animation:
+        print("アニメーションモードでシミュレーションを開始します。")
+        # アニメーションモードの場合、統計情報の前に改行を入れるなどして表示を調整することが望ましい場合がある
+        completed_tasks = simulator.run()
+        # アニメーション後はコンソールがクリアされている可能性があるので、統計情報の前に何か表示するか、
+        # またはユーザーにアニメーションが完了したことを伝えるメッセージを出すと親切かもしれません。
+        print("\nアニメーション完了。最終統計情報を表示します。")
+    else:
+        completed_tasks = simulator.run()
 
     # デバッグ用の出力はコメントアウト
     # print("\n--- 全完了タスク (デバッグ用) ---")
