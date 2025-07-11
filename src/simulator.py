@@ -1,3 +1,6 @@
+import os
+import time
+
 from src.api_client import APIClient  # APIClient をインポート
 from src.data_model import Request
 from src.queue_manager import PriorityQueueStrategy  # PriorityQueueStrategy をインポート
@@ -14,19 +17,32 @@ class Simulator:
     イベントドリブンな方法で時間を進めます。
     """
 
-    def __init__(self, requests: list[Request], num_workers: int, queue_max_size: int | None = None):
+    def __init__(
+        self,
+        requests: list[Request],
+        num_workers: int,
+        queue_max_size: int | None = None,
+        animation_mode: bool = False,
+        animation_update_interval_seconds: float = 1.0,
+    ):
         """
         Simulatorのコンストラクタ。
 
         Args:
-            requests (List[Request]): シミュレーション対象のリクエストのリスト。
+            requests (list[Request]): シミュレーション対象のリクエストのリスト。
                                       このリストは内部で到着時刻順にソートされます。
             num_workers (int): シミュレーションで使用するワーカーの数。
             queue_max_size (Optional[int]): タスクキューの最大サイズ。
                                            Noneの場合は無制限。
+            animation_mode (bool): アニメーションモードを有効にするかどうか。
+            animation_update_interval_seconds (float): アニメーションモード時のシミュレーション時間更新間隔（秒）。
         """
         # 入力リクエストは変更しないようにコピーしてソート
-        self.pending_requests: list[Request] = sorted(list(requests), key=lambda r: r.sim_arrival_time)
+        self.pending_requests: list[Request] = sorted(requests, key=lambda r: r.sim_arrival_time)
+        self.animation_mode = animation_mode
+        self.animation_update_interval_seconds = animation_update_interval_seconds
+        # アニメーション速度: シミュレーション内の24時間 (86400秒) が現実の60秒で表示される
+        self.animation_sleep_duration = self.animation_update_interval_seconds / (86400 / 60) if animation_mode else 0
 
         # TODO: 将来的には複数のキューや異なるキュータイプ (例: 優先度キュー) も考慮。
         # その場合、task_queue の管理方法や Worker へのキューの渡し方を変更する必要がある。
@@ -85,116 +101,151 @@ class Simulator:
         """現在のシミュレーション時刻を返す。"""
         return self.current_time
 
+    def _display_animation_frame(self):
+        """アニメーションモードで現在のシミュレーション状態を表示します。"""
+        os.system("cls" if os.name == "nt" else "clear")  # noqa: S605
+        print("--- Simulation Animation ---")
+        print(f"Current Time: {self.current_time:.2f} s")
+
+        # 時:分:秒 形式で表示
+        hours = int(self.current_time // 3600)
+        minutes = int((self.current_time % 3600) // 60)
+        seconds = int(self.current_time % 60)
+        print(f"Formatted Time: {hours:02d}:{minutes:02d}:{seconds:02d}")
+
+        print(f"Pending Requests: {len(self.pending_requests)}")
+        print(f"Tasks in Queue: {len(self.task_queue)}")
+
+        active_workers = sum(1 for w in self.workers if w.current_task)
+        print(f"Active Workers: {active_workers}/{len(self.workers)}")
+
+        print(f"Completed Requests: {len(self.completed_requests)}")
+
+        if self.animation_mode and self.animation_sleep_duration > 0:
+            time.sleep(self.animation_sleep_duration)
+
     def run(self) -> list[Request]:
         """
         シミュレーションを実行します。
 
-        シミュレーションは、保留中のリクエストがなくなり、タスクキューが空になり、
-        かつ全てのワーカーがアイドル状態になるまで継続します。
-        時間はイベントドリブンで進みます。
+        animation_modeがTrueの場合、固定時間ステップでアニメーション表示しながら実行します。
+        Falseの場合、イベントドリブンで高速に実行します。
 
         Returns:
-            List[Request]: 処理が完了した（またはリジェクトされた）リクエストのリスト。
+            list[Request]: 処理が完了した（またはリジェクトされた）リクエストのリスト。
                            完了時刻（リジェクトの場合は-1）などの情報が更新されています。
         """
-        while self.pending_requests or not self.task_queue.is_empty() or any(w.current_task for w in self.workers):
-            # print(f"--- Loop Start: Current Time: {self.current_time:.2f}, Pending: {len(self.pending_requests)}, Queue: {len(self.task_queue)}, BusyWorkers: {sum(1 for w in self.workers if w.current_task)} ---")
+        if self.animation_mode:
+            # アニメーションモードのループ
+            while self.pending_requests or not self.task_queue.is_empty() or any(w.current_task for w in self.workers):
+                self._display_animation_frame()
 
-            action_occurred_in_current_step = True
-            while action_occurred_in_current_step:
-                action_occurred_in_current_step = False
-
-                # 1. 新しいリクエストの到着を確認し、キューに追加
+                # 1. 新しいリクエストの到着を確認し、キューに追加 (現在の時刻までのもの)
                 newly_arrived_indices = []
                 for i, req in enumerate(self.pending_requests):
-                    if req.sim_arrival_time <= self.current_time:  # sim_arrival_time を使用
+                    if req.sim_arrival_time <= self.current_time:  # request_time を sim_arrival_time に変更
                         newly_arrived_indices.append(i)
                     else:
                         break
 
-                if newly_arrived_indices:
-                    action_occurred_in_current_step = True
-                    for i in sorted(newly_arrived_indices, reverse=True):
-                        req_to_enqueue = self.pending_requests.pop(i)
-                        req_to_enqueue.arrival_time_in_queue = self.current_time
-                        # TODO: アドミッションコントロール戦略をパラメータ化する。
-                        # 現在は単純なis_fullチェックだが、ストラテジーパターンなどで拡張可能にする。
-                        if self.task_queue.is_full():
-                            # print(f"[Time: {self.current_time:.2f}] Queue full. Request {req_to_enqueue.user_id} rejected at arrival_time_in_queue: {req_to_enqueue.arrival_time_in_queue:.2f}")
-                            req_to_enqueue.finish_processing_time_by_worker = -1
-                            self.completed_requests.append(req_to_enqueue)
-                        else:
-                            self.task_queue.enqueue(req_to_enqueue)
-                            # print(f"[Time: {self.current_time:.2f}] Request {req_to_enqueue.user_id} enqueued. Arrival_time_in_queue: {req_to_enqueue.arrival_time_in_queue:.2f}")
+                for i in sorted(newly_arrived_indices, reverse=True):
+                    req_to_enqueue = self.pending_requests.pop(i)
+                    req_to_enqueue.arrival_time_in_queue = self.current_time
+                    if self.task_queue.is_full():
+                        req_to_enqueue.finish_processing_time_by_worker = -1
+                        self.completed_requests.append(req_to_enqueue)
+                    else:
+                        self.task_queue.enqueue(req_to_enqueue)
 
-                # 2. ワーカーにタスクを処理させる (タスク完了 or 新規タスク開始)
+                # 2. ワーカーにタスクを処理させる
                 for worker in self.workers:
-                    # process_task はタスク完了時に完了タスクを返し、アイドルなら新規タスクを開始する
-                    original_busy_until = worker.busy_until
-                    original_current_task_id = id(worker.current_task) if worker.current_task else None
-
                     completed_task = worker.process_task(self.current_time)
-
-                    new_current_task_id = id(worker.current_task) if worker.current_task else None
-
                     if completed_task:
                         self.completed_requests.append(completed_task)
-                        action_occurred_in_current_step = True
-                        # print(f"[Time: {self.current_time:.2f}] Task {completed_task.user_id} completed by Worker {worker.worker_id}. Recorded finish_time: {completed_task.finish_processing_time_by_worker:.2f}. Queue len: {len(self.task_queue)}")
 
-                    # 新しいタSKを開始した場合も action_occurred とする
-                    if (
-                        worker.current_task
-                        and new_current_task_id != original_current_task_id
-                        or worker.current_task
-                        and worker.busy_until != original_busy_until
-                        and original_current_task_id == new_current_task_id
-                    ):  # 新しいタスクが割り当てられた
-                        action_occurred_in_current_step = True
-
-            # 3. 次のイベント時刻に進む
-            next_event_time = self._get_next_event_time()
-            # print(f"Next event time calculated: {next_event_time}")
-
-            if next_event_time == float("inf"):
+                # 3. 時間を進める
+                # 全ての処理が終わっていればループを抜ける (アニメーションの最後のフレームを表示するため、先に時間を進めない)
                 if (
                     not self.pending_requests
                     and self.task_queue.is_empty()
                     and all(not w.current_task for w in self.workers)
                 ):
-                    # print("--- Simulation End: No more events or tasks. ---")
+                    self._display_animation_frame()  # 最後の状態を表示
                     break
-                else:
-                    # print(f"Warning: next_event_time is inf, but simulation is not over. Current time: {self.current_time}")
-                    # print(f"Pending: {len(self.pending_requests)}, Queue: {len(self.task_queue)}, Workers busy: {sum(1 for w in self.workers if w.current_task)}")
-                    # print("Forcing break due to potential deadlock.")
-                    break  # Potential deadlock or error in logic
 
-            if next_event_time > self.current_time:
-                self.current_time = next_event_time
-                # print(f"--- Advancing Time to: {self.current_time:.2f} ---")
-            elif next_event_time <= self.current_time:
-                # この状態は、現在の時刻でまだ処理できるイベントがあるか、
-                # もしくは全ての処理が完了して次のイベントがない場合。
-                # action_occurred_in_current_step ループで処理されるか、
-                # 上の next_event_time == float('inf') でbreakする。
-                # 基本的には、時間が進まない場合は、action_occurred_in_current_stepループで何かが起こるはず。
-                # それでも進まない場合は、上記のinfチェックで終了する。
-                # print(f"Warning or Info: next_event_time ({next_event_time}) <= current_time ({self.current_time}). Action_occurred_in_current_step should handle this or it's end of simulation.")
-                # もし、action_occurred_in_current_step が False で、かつ next_event_time <= self.current_time で、
-                # さらにシミュレーション終了条件も満たさない場合、無限ループの可能性がある。
-                # そのため、_get_next_event_time が常に current_time より厳密に大きい値を返すか、
-                # float('inf') を返すように保証することが重要。
-                # worker.busy_until は current_time + processing_time なので、processing_time > 0 なら常に未来。
-                # processing_time = 0 の場合は busy_until = current_time となりうる。
-                # その場合、worker.process_task で完了し、action_occurred が true になる。
-                # そして、再度 _get_next_event_time が呼ばれる。
-                if not (
-                    self.pending_requests or not self.task_queue.is_empty() or any(w.current_task for w in self.workers)
-                ):
-                    # print("--- Simulation End: All tasks processed and no pending. ---")
-                    break  # All tasks processed
-                pass
+                self.current_time += self.animation_update_interval_seconds
+
+            if not (
+                not self.pending_requests
+                and self.task_queue.is_empty()
+                and all(not w.current_task for w in self.workers)
+            ):
+                self._display_animation_frame()  # ループが途中で抜けた場合（例：最大時間など）も最終状態表示
+
+        else:  # イベント駆動モード (既存のロジック)
+            while self.pending_requests or not self.task_queue.is_empty() or any(w.current_task for w in self.workers):
+                action_occurred_in_current_step = True
+                while action_occurred_in_current_step:
+                    action_occurred_in_current_step = False
+
+                    newly_arrived_indices = []
+                    for i, req in enumerate(self.pending_requests):
+                        if req.sim_arrival_time <= self.current_time:  # request_time を sim_arrival_time に変更
+                            newly_arrived_indices.append(i)
+                        else:
+                            break
+
+                    if newly_arrived_indices:
+                        action_occurred_in_current_step = True
+                        for i in sorted(newly_arrived_indices, reverse=True):
+                            req_to_enqueue = self.pending_requests.pop(i)
+                            req_to_enqueue.arrival_time_in_queue = self.current_time
+                            if self.task_queue.is_full():
+                                req_to_enqueue.finish_processing_time_by_worker = -1
+                                self.completed_requests.append(req_to_enqueue)
+                            else:
+                                self.task_queue.enqueue(req_to_enqueue)
+
+                    for worker in self.workers:
+                        original_busy_until = worker.busy_until
+                        original_current_task_id = id(worker.current_task) if worker.current_task else None
+                        completed_task = worker.process_task(self.current_time)
+                        new_current_task_id = id(worker.current_task) if worker.current_task else None
+
+                        if completed_task:
+                            self.completed_requests.append(completed_task)
+                            action_occurred_in_current_step = True
+
+                        if (
+                            worker.current_task
+                            and new_current_task_id != original_current_task_id
+                            or worker.current_task
+                            and worker.busy_until != original_busy_until
+                            and original_current_task_id == new_current_task_id
+                        ):
+                            action_occurred_in_current_step = True
+
+                next_event_time = self._get_next_event_time()
+                if next_event_time == float("inf"):
+                    if (
+                        not self.pending_requests
+                        and self.task_queue.is_empty()
+                        and all(not w.current_task for w in self.workers)
+                    ):
+                        break
+                    else:
+                        break
+
+                if next_event_time > self.current_time:
+                    self.current_time = next_event_time
+                elif next_event_time <= self.current_time:
+                    if not (
+                        self.pending_requests
+                        or not self.task_queue.is_empty()
+                        or any(w.current_task for w in self.workers)
+                    ):
+                        break
+                    pass
 
         self.completed_requests.sort(
             key=lambda r: (
@@ -202,5 +253,4 @@ class Simulator:
                 r.arrival_time_in_queue,
             )
         )
-        # print(f"Total completed (incl. rejected): {len(self.completed_requests)}")
         return self.completed_requests
