@@ -1,7 +1,8 @@
 from collections import deque
-from typing import Optional, TypeVar, Generic
+from typing import Generic, TypeVar
 
-T = TypeVar('T')
+T = TypeVar("T")
+
 
 class FifoQueue(Generic[T]):
     """
@@ -11,7 +12,8 @@ class FifoQueue(Generic[T]):
     Attributes:
         max_size (Optional[int]): キューの最大サイズ。Noneの場合は無制限。
     """
-    def __init__(self, max_size: Optional[int] = None):
+
+    def __init__(self, max_size: int | None = None):
         """
         FifoQueueのコンストラクタ。
 
@@ -38,7 +40,7 @@ class FifoQueue(Generic[T]):
         self._queue.append(item)
         return True
 
-    def dequeue(self) -> Optional[T]:
+    def dequeue(self) -> T | None:
         """
         キューの先頭からアイテムを取り出し、そのアイテムを返します。
         キューが空の場合はNoneを返します。
@@ -80,7 +82,7 @@ class FifoQueue(Generic[T]):
         """
         return len(self._queue)
 
-    def peek(self) -> Optional[T]:
+    def peek(self) -> T | None:
         """
         キューの先頭にあるアイテムを、キューから削除せずに返します。
         キューが空の場合はNoneを返します。
@@ -99,6 +101,7 @@ class PriorityQueueStrategy(Generic[T]):
     処理時間が短いタスクを優先キューに、それ以外を通常キューに入れる。
     デキュー時、優先キューと通常キューを確率的に選択する。
     """
+
     def __init__(self, priority_threshold_seconds: float = 20.0, priority_bias: float = 0.8):
         """
         PriorityQueueStrategyのコンストラクタ。
@@ -127,8 +130,8 @@ class PriorityQueueStrategy(Generic[T]):
             bool: アイテムが正常に追加された場合はTrue。
         """
         # itemがRequest型でprocessing_time属性を持つことを期待
-        if hasattr(item, 'processing_time') and isinstance(getattr(item, 'processing_time'), (int, float)):
-            if getattr(item, 'processing_time') < self.priority_threshold_seconds:
+        if hasattr(item, "processing_time") and isinstance(item.processing_time, (int, float)):
+            if item.processing_time < self.priority_threshold_seconds:
                 return self.priority_queue.enqueue(item)
             else:
                 return self.normal_queue.enqueue(item)
@@ -138,7 +141,7 @@ class PriorityQueueStrategy(Generic[T]):
             # warnings.warn("Item does not have a valid 'processing_time' attribute, enqueuing to normal queue.")
             return self.normal_queue.enqueue(item)
 
-    def dequeue(self) -> Optional[T]:
+    def dequeue(self) -> T | None:
         """
         優先度と確率に基づいてキューからアイテムをデキューします。
         80%の確率で優先キューから、20%の確率で通常キューから試行します。
@@ -147,7 +150,7 @@ class PriorityQueueStrategy(Generic[T]):
         Returns:
             Optional[T]: デキューされたアイテム。両方のキューが空の場合はNone。
         """
-        import random # randomモジュールをインポート
+        import random  # randomモジュールをインポート
 
         priority_q_empty = self.priority_queue.is_empty()
         normal_q_empty = self.normal_queue.is_empty()
@@ -162,14 +165,14 @@ class PriorityQueueStrategy(Generic[T]):
             return self.priority_queue.dequeue()
 
         # 両方にアイテムがある場合、確率に基づいて選択
-        if random.random() < self.priority_bias: # 優先キューを試行
+        if random.random() < self.priority_bias:  # 優先キューを試行
             return self.priority_queue.dequeue()
-        else: # 通常キューを試行
+        else:  # 通常キューを試行
             return self.normal_queue.dequeue()
         # Note: 上記のロジックだと、例えば優先キューを試行して空だった場合に通常キューにフォールバックしない。
         # 要件「選択したキューが空の場合、もう一方のキューからデキューします」を満たすように修正する。
 
-    def dequeue_corrected(self) -> Optional[T]:
+    def dequeue_corrected(self) -> T | None:
         """
         優先度と確率に基づいてキューからアイテムをデキューします。(修正版)
         指定された確率で優先キューまたは通常キューを選択し、
@@ -191,15 +194,15 @@ class PriorityQueueStrategy(Generic[T]):
         if chose_priority:
             if priority_q_has_items:
                 return self.priority_queue.dequeue()
-            elif normal_q_has_items: # 優先キューが空なら通常キューから
+            elif normal_q_has_items:  # 優先キューが空なら通常キューから
                 return self.normal_queue.dequeue()
-        else: # chose_normal
+        else:  # chose_normal
             if normal_q_has_items:
                 return self.normal_queue.dequeue()
-            elif priority_q_has_items: # 通常キューが空なら優先キューから
+            elif priority_q_has_items:  # 通常キューが空なら優先キューから
                 return self.priority_queue.dequeue()
 
-        return None # 両方空の場合(最初のチェックで捕捉されるはずだが念のため)
+        return None  # 両方空の場合(最初のチェックで捕捉されるはずだが念のため)
 
     # dequeueメソッドを修正版に置き換える
     dequeue = dequeue_corrected
@@ -222,11 +225,11 @@ class PriorityQueueStrategy(Generic[T]):
         """
         return len(self.priority_queue) + len(self.normal_queue)
 
-    def peek_priority(self) -> Optional[T]:
+    def peek_priority(self) -> T | None:
         """優先キューの先頭を覗き見します。"""
         return self.priority_queue.peek()
 
-    def peek_normal(self) -> Optional[T]:
+    def peek_normal(self) -> T | None:
         """通常キューの先頭を覗き見します。"""
         return self.normal_queue.peek()
 
@@ -237,4 +240,4 @@ class PriorityQueueStrategy(Generic[T]):
         常にFalse（満杯ではない）を返します。
         将来的にサイズ制限を導入する場合は、このメソッドのロジックを修正する必要があります。
         """
-        return False # サイズ制限がないため、常に満杯ではない
+        return False  # サイズ制限がないため、常に満杯ではない

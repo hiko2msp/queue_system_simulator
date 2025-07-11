@@ -8,3 +8,47 @@ license = {text = "Apache-2.0"}
 dependencies = [
     "numpy>=1.20.0",
 ]
+
+[project.optional-dependencies]
+dev = [
+    "mypy>=1.10.0",
+    "ruff>=0.4.4",
+    "pre-commit>=3.7.1",
+]
+
+[tool.mypy]
+python_version = "3.12"
+warn_return_any = true
+warn_unused_configs = true
+namespace_packages = true
+explicit_package_bases = true
+check_untyped_defs = true
+
+[[tool.mypy.overrides]]
+module = "numpy.*"
+ignore_missing_imports = true
+
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "S", "B", "A", "C4", "T20", "SIM", "PTH", "NPY"]
+ignore = ["E501", "T201"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+line-ending = "auto"
+
+[dependency-groups]
+dev = [
+    "mypy>=1.16.1",
+    "pre-commit>=4.2.0",
+    "ruff>=0.12.2",
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["src", "tests"]

@@ -1,14 +1,17 @@
 import unittest
-from unittest.mock import MagicMock, patch
-from src.worker import Worker
-from src.queue_manager import FifoQueue, PriorityQueueStrategy # PriorityQueueStrategy をインポート
+from unittest.mock import MagicMock
+
 from src.data_model import Request
+from src.queue_manager import PriorityQueueStrategy  # PriorityQueueStrategy をインポート
+from src.worker import Worker
+
 # from src.api_client import APIClient # WorkerはAPIClientのインスタンスを取るが、テストではモックする
+
 
 class TestWorkerWithAPIClient(unittest.TestCase):
     def setUp(self):
         # self.task_queue = FifoQueue[Request]() # 旧
-        self.task_queue = PriorityQueueStrategy[Request]() # 新
+        self.task_queue = PriorityQueueStrategy[Request]()  # 新
         # APIClientをモック
         self.mock_api_client = MagicMock()
         # Workerの初期化時にモックAPIClientを渡す
@@ -37,8 +40,8 @@ class TestWorkerWithAPIClient(unittest.TestCase):
         self.assertIsNotNone(self.worker.current_task)
         self.assertEqual(self.worker.current_task, req1)
         self.assertEqual(self.worker.current_task.start_processing_time_by_worker, 0.0)
-        self.assertEqual(self.worker.current_task.used_api_id, 1) # used_api_idが設定されたか確認
-        self.assertEqual(self.worker.busy_until, 2.0) # APIコール時間とは別に処理時間がある想定
+        self.assertEqual(self.worker.current_task.used_api_id, 1)  # used_api_idが設定されたか確認
+        self.assertEqual(self.worker.busy_until, 2.0)  # APIコール時間とは別に処理時間がある想定
         self.assertEqual(self.worker.task_processing_status, "success")
         self.assertTrue(self.worker.is_busy(1.0))
 
@@ -50,7 +53,7 @@ class TestWorkerWithAPIClient(unittest.TestCase):
         # TODO: RequestオブジェクトにAPI処理結果を格納するフィールドがあれば、それもテスト
         # self.assertEqual(completed_task.api_status, "success")
         self.assertIsNone(self.worker.current_task)
-        self.assertIsNone(self.worker.task_processing_status) # 完了後はクリアされる
+        self.assertIsNone(self.worker.task_processing_status)  # 完了後はクリアされる
 
     def test_process_task_api_call_failure_all_apis_unavailable(self):
         req1 = Request(user_id="user2", request_time=0.0, processing_time=1.5)
@@ -65,7 +68,7 @@ class TestWorkerWithAPIClient(unittest.TestCase):
         self.mock_api_client.make_request.assert_called_once_with({"user_id": "user2", "data": "sample_payload"})
         self.assertIsNotNone(self.worker.current_task)
         self.assertEqual(self.worker.current_task, req1)
-        self.assertEqual(self.worker.busy_until, 1.5) # API失敗でも処理時間は消費する想定
+        self.assertEqual(self.worker.busy_until, 1.5)  # API失敗でも処理時間は消費する想定
         self.assertEqual(self.worker.task_processing_status, "failed_api_limit")
 
         # 時刻 1.5: req1が完了 (APIコールは失敗したが、タスクとしては処理時間を終えた)
@@ -89,16 +92,16 @@ class TestWorkerWithAPIClient(unittest.TestCase):
 
         # Start task req1
         self.worker.process_task(current_time=0.0)
-        self.mock_api_client.make_request.assert_called_once() # Called for req1
-        self.mock_api_client.reset_mock() # Reset call count for next assertion
+        self.mock_api_client.make_request.assert_called_once()  # Called for req1
+        self.mock_api_client.reset_mock()  # Reset call count for next assertion
 
         req2 = Request(user_id="user2", request_time=0.1, processing_time=1.0)
         self.task_queue.enqueue(req2)
 
         # At time 1.0, worker is still busy with req1
         self.worker.process_task(current_time=1.0)
-        self.mock_api_client.make_request.assert_not_called() # Not called again as worker is busy
-        self.assertEqual(self.worker.current_task, req1) # Still processing req1
+        self.mock_api_client.make_request.assert_not_called()  # Not called again as worker is busy
+        self.assertEqual(self.worker.current_task, req1)  # Still processing req1
 
 
 # 既存のTestWorkerクラスもAPIClientをモックするように修正するか、
@@ -107,32 +110,35 @@ class TestWorkerWithAPIClient(unittest.TestCase):
 # 既存のテストは、WorkerがAPIClientのモックインスタンスを受け取るように setUp を変更すれば、
 # APIClientの呼び出しを伴わないロジック（キューからのデキュータイミングなど）はそのまま使える可能性がある。
 
+
 # 既存のテストを活かすための修正例（TestWorkerのsetUpを変更）
 class TestWorkerOriginalLogicWithMockAPI(unittest.TestCase):
     def setUp(self):
         # self.task_queue: FifoQueue[Request] = FifoQueue() # 旧
-        self.task_queue: PriorityQueueStrategy[Request] = PriorityQueueStrategy() # 新
-        self.mock_api_client = MagicMock() # APIClientをモック
+        self.task_queue: PriorityQueueStrategy[Request] = PriorityQueueStrategy()  # 新
+        self.mock_api_client = MagicMock()  # APIClientをモック
         # APIClient.make_requestが常に成功を返すようにデフォルト設定
-        self.mock_api_client.make_request.return_value = {"status": "success", "api_used_id": 1, "data": "dummy_response"}
+        self.mock_api_client.make_request.return_value = {
+            "status": "success",
+            "api_used_id": 1,
+            "data": "dummy_response",
+        }
         self.worker = Worker(worker_id=1, task_queue=self.task_queue, api_client=self.mock_api_client)
 
-
-    def test_worker_initialization(self): # 既存のテストケース
+    def test_worker_initialization(self):  # 既存のテストケース
         self.assertEqual(self.worker.worker_id, 1)
         self.assertIsNone(self.worker.current_task)
         self.assertEqual(self.worker.busy_until, 0.0)
         self.assertFalse(self.worker.is_busy(0.0))
 
-    def test_process_task_empty_queue(self): # 既存のテストケース
+    def test_process_task_empty_queue(self):  # 既存のテストケース
         completed_task = self.worker.process_task(current_time=0.0)
         self.assertIsNone(completed_task)
         self.assertIsNone(self.worker.current_task)
         self.assertFalse(self.worker.is_busy(0.0))
         self.mock_api_client.make_request.assert_not_called()
 
-
-    def test_process_task_starts_and_completes(self): # 既存のテストケース（APIコールを考慮）
+    def test_process_task_starts_and_completes(self):  # 既存のテストケース（APIコールを考慮）
         req1 = Request(user_id="user1", request_time=0.0, processing_time=2.0)
         self.task_queue.enqueue(req1)
 
@@ -145,14 +151,13 @@ class TestWorkerOriginalLogicWithMockAPI(unittest.TestCase):
         self.assertEqual(self.worker.busy_until, 2.0)
         self.assertTrue(self.worker.is_busy(1.0))
 
-
         # 時刻 1.0: 処理中
-        self.mock_api_client.reset_mock() # APIコール数をリセット
+        self.mock_api_client.reset_mock()  # APIコール数をリセット
         req2 = Request(user_id="user2", request_time=0.5, processing_time=1.0)
         self.task_queue.enqueue(req2)
         self.assertIsNone(self.worker.process_task(current_time=1.0))
         self.assertEqual(self.worker.current_task, req1)
-        self.mock_api_client.make_request.assert_not_called() # 処理中なのでAPIコールなし
+        self.mock_api_client.make_request.assert_not_called()  # 処理中なのでAPIコールなし
 
         # 時刻 2.0: req1が完了
         completed_task = self.worker.process_task(current_time=2.0)
@@ -166,7 +171,7 @@ class TestWorkerOriginalLogicWithMockAPI(unittest.TestCase):
         self.mock_api_client.make_request.assert_called_with({"user_id": "user2", "data": "sample_payload"})
         self.assertIsNotNone(self.worker.current_task)
         self.assertEqual(self.worker.current_task, req2)
-        self.assertEqual(self.worker.busy_until, 3.0) # 2.0 + 1.0
+        self.assertEqual(self.worker.busy_until, 3.0)  # 2.0 + 1.0
 
         # 時刻 3.0: req2が完了
         completed_task_2 = self.worker.process_task(current_time=3.0)
@@ -182,15 +187,15 @@ class TestWorkerOriginalLogicWithMockAPI(unittest.TestCase):
 
         req = Request("user1", 0.0, 2.0)
         self.task_queue.enqueue(req)
-        self.worker.process_task(0.0) # タスク開始、APIコール発生
+        self.worker.process_task(0.0)  # タスク開始、APIコール発生
 
         self.assertTrue(self.worker.is_busy(0.0))
         self.assertTrue(self.worker.is_busy(1.999))
         self.assertFalse(self.worker.is_busy(2.0))
 
-        self.worker.process_task(2.0) # タスク完了処理
+        self.worker.process_task(2.0)  # タスク完了処理
         self.assertFalse(self.worker.is_busy(2.0))
 
 
-if __name__ == '__main__':
-    unittest.main(argv=['first-arg-is-ignored'], exit=False)
+if __name__ == "__main__":
+    unittest.main(argv=["first-arg-is-ignored"], exit=False)
