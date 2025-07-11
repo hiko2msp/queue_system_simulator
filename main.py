@@ -4,6 +4,10 @@ from src.simulator import Simulator
 from src.statistics import calculate_simulation_statistics
 # import json # 結果をJSON形式で出力するため (今回は標準出力のみ)
 import numpy as np # main関数内で statistics をインポートするために必要
+import datetime # datetime をインポート
+
+# scripts/generate_sample_data.py と同じ基準時刻を使用
+SIMULATION_START_TIME = datetime.datetime(2023, 1, 1, 0, 0, 0, tzinfo=datetime.timezone.utc)
 
 def main():
     parser = argparse.ArgumentParser(description="システムアクセスシミュレーター")
@@ -22,7 +26,8 @@ def main():
     #     print(f"アドミッション戦略: {args.admission_strategy}")
 
     try:
-        requests = parse_csv(args.csv_file)
+        # csv_parser は request.request_time に datetime オブジェクトを設定する
+        parsed_requests = parse_csv(args.csv_file)
     except FileNotFoundError:
         print(f"エラー: CSVファイル '{args.csv_file}' が見つかりません。")
         return
@@ -30,14 +35,34 @@ def main():
         print(f"エラー: CSVファイルのフォーマットが正しくありません。詳細: {e}")
         return
 
-    if not requests:
+    if not parsed_requests:
         print("CSVファイルにリクエストデータが含まれていません。シミュレーションを終了します。")
         # statistics が numpy を使うので、ここで import しておく
         # (実際には calculate_simulation_statistics が呼ばれる際に statistics モジュール内で import される)
         return
 
+    # Requestオブジェクトのリストを準備し、sim_arrival_time を計算して設定
+    requests_for_simulator = []
+    for req_data in parsed_requests:
+        if req_data.request_time < SIMULATION_START_TIME:
+            # このケースは通常発生しないはず (generate_sample_data.py が SIMULATION_START_TIME 以降の時刻を生成するため)
+            # 念のため警告
+            print(f"警告: リクエスト {req_data.user_id} の request_time ({req_data.request_time}) "
+                  f"がシミュレーション開始時刻 ({SIMULATION_START_TIME}) より前です。相対時間は負になります。")
+
+        # sim_arrival_time を計算 (SIMULATION_START_TIME からの経過秒数)
+        # req_data は Request 型のインスタンスなので、直接属性を設定できる
+        req_data.sim_arrival_time = (req_data.request_time - SIMULATION_START_TIME).total_seconds()
+        requests_for_simulator.append(req_data)
+
+    # デバッグ用: sim_arrival_time が正しく設定されているか確認 (必要であればコメント解除)
+    # for r_idx, r_val in enumerate(requests_for_simulator):
+    #     if r_idx < 5: # 最初の5件だけ表示
+    #         print(f"Debug: User: {r_val.user_id}, ISO: {r_val.request_time}, SimArrival: {r_val.sim_arrival_time:.6f}, ProcTime: {r_val.processing_time}")
+
+
     simulator = Simulator(
-        requests=requests,
+        requests=requests_for_simulator, # sim_arrival_time が設定されたリストを渡す
         num_workers=args.num_workers,
         queue_max_size=args.queue_size
     )
@@ -68,7 +93,7 @@ def main():
 
     print("\n--- シミュレーション統計 ---")
 
-    print(f"  総リクエスト数 (入力): {len(requests)}") # 入力されたリクエスト総数
+    print(f"  総リクエスト数 (入力): {len(parsed_requests)}") # 変更: requests -> parsed_requests
     print(f"  処理完了リクエスト数: {statistics['total_requests_processed']}")
     print(f"  リジェクトリクエスト数: {statistics['total_requests_rejected']}")
 
