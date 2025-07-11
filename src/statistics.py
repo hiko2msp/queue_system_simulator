@@ -1,10 +1,12 @@
-from typing import List, Dict, Union
-from collections import defaultdict # defaultdict をインポート
-import numpy as np
-from src.data_model import Request
-from config.settings import NUM_EXTERNAL_APIS # NUM_EXTERNAL_APIS をインポート
+from collections import defaultdict  # defaultdict をインポート
 
-def calculate_queuing_times(processed_requests: List[Request]) -> List[float]:
+import numpy as np
+
+from config.settings import NUM_EXTERNAL_APIS  # NUM_EXTERNAL_APIS をインポート
+from src.data_model import Request
+
+
+def calculate_queuing_times(processed_requests: list[Request]) -> list[float]:
     """
     処理済みリクエストのリストから、各リクエストのキューイング時間を計算します。
 
@@ -20,12 +22,15 @@ def calculate_queuing_times(processed_requests: List[Request]) -> List[float]:
         List[float]: 各処理済みリクエストのキューイング時間のリスト。
                      キューイング時間が計算できないリクエストは除外されます。
     """
-    queuing_times: List[float] = []
+    queuing_times: list[float] = []
     for req in processed_requests:
         # start_processing_time_by_worker と arrival_time_in_queue が適切に記録されていることを確認
-        if hasattr(req, 'start_processing_time_by_worker') and req.start_processing_time_by_worker >= 0 and \
-           hasattr(req, 'arrival_time_in_queue') and req.arrival_time_in_queue >= 0:
-
+        if (
+            hasattr(req, "start_processing_time_by_worker")
+            and req.start_processing_time_by_worker >= 0
+            and hasattr(req, "arrival_time_in_queue")
+            and req.arrival_time_in_queue >= 0
+        ):
             if req.start_processing_time_by_worker >= req.arrival_time_in_queue:
                 queuing_time = req.start_processing_time_by_worker - req.arrival_time_in_queue
                 queuing_times.append(queuing_time)
@@ -34,10 +39,11 @@ def calculate_queuing_times(processed_requests: List[Request]) -> List[float]:
                 # (処理開始がキュー到着より前になることはないため)
                 # ログ出力やエラーハンドリングを検討することもできます。
                 # print(f"Warning: Request {req.user_id} has start_processing_time {req.start_processing_time_by_worker} < arrival_time_in_queue {req.arrival_time_in_queue}")
-                pass # このリクエストのキューイング時間は計算しない
+                pass  # このリクエストのキューイング時間は計算しない
     return queuing_times
 
-def calculate_percentiles(data: List[float], percentiles_to_calculate: List[int]) -> Dict[str, float]:
+
+def calculate_percentiles(data: list[float], percentiles_to_calculate: list[int]) -> dict[str, float]:
     """
     数値データのリストから、指定されたパーセンタイルの値を計算します。
 
@@ -57,7 +63,7 @@ def calculate_percentiles(data: List[float], percentiles_to_calculate: List[int]
     if not data:
         return {f"p{p}": np.nan for p in percentiles_to_calculate}
 
-    results: Dict[str, float] = {}
+    results: dict[str, float] = {}
     for p_val in percentiles_to_calculate:
         if not (0 <= p_val <= 100):
             raise ValueError(f"Percentile value must be between 0 and 100, got {p_val}")
@@ -65,7 +71,8 @@ def calculate_percentiles(data: List[float], percentiles_to_calculate: List[int]
         results[f"p{p_val}"] = float(np.percentile(np.array(data), p_val))
     return results
 
-def calculate_simulation_statistics(completed_requests: List[Request]) -> Dict[str, Union[float, int]]:
+
+def calculate_simulation_statistics(completed_requests: list[Request]) -> dict[str, float | int]:
     """
     シミュレーションの完了結果（処理済みおよびリジェクトされたリクエストを含む）から
     主要な統計情報を計算します。
@@ -86,7 +93,7 @@ def calculate_simulation_statistics(completed_requests: List[Request]) -> Dict[s
     Returns:
         Dict[str, Union[float, int]]: 計算された統計情報を含む辞書。
     """
-    stats: Dict[str, Union[float, int]] = {}
+    stats: dict[str, float | int] = {}
 
     processed_requests = [req for req in completed_requests if req.finish_processing_time_by_worker != -1]
     rejected_requests = [req for req in completed_requests if req.finish_processing_time_by_worker == -1]
@@ -94,30 +101,30 @@ def calculate_simulation_statistics(completed_requests: List[Request]) -> Dict[s
     stats["total_requests_processed"] = len(processed_requests)
     stats["total_requests_rejected"] = len(rejected_requests)
 
-    queuing_times = calculate_queuing_times(processed_requests) # ここでは処理されたリクエストのみ渡す
+    queuing_times = calculate_queuing_times(processed_requests)  # ここでは処理されたリクエストのみ渡す
 
-    if queuing_times: # queuing_times が空でない場合
+    if queuing_times:  # queuing_times が空でない場合
         stats["average_queuing_time"] = float(np.mean(queuing_times))
         percentile_values_to_calc = [50, 75, 90, 99]
         percentile_results = calculate_percentiles(queuing_times, percentile_values_to_calc)
         stats.update(percentile_results)
-    else: # queuing_times が空の場合 (処理されたリクエストがないか、キューイング時間が計算できなかった場合)
+    else:  # queuing_times が空の場合 (処理されたリクエストがないか、キューイング時間が計算できなかった場合)
         stats["average_queuing_time"] = np.nan
         percentile_values_to_calc = [50, 75, 90, 99]
-        percentile_results = calculate_percentiles([], percentile_values_to_calc) # nanが入る
+        percentile_results = calculate_percentiles([], percentile_values_to_calc)  # nanが入る
         stats.update(percentile_results)
 
     # NaNを文字列 "NaN" に変換するかどうかは出力時に検討。ここではfloatのまま。
 
     # API使用回数の集計
-    api_usage_counts: Dict[str, int] = defaultdict(int)
-    for i in range(1, NUM_EXTERNAL_APIS + 1): # 存在しうる全てのAPI IDをキーとして初期化
+    api_usage_counts: dict[str, int] = defaultdict(int)
+    for i in range(1, NUM_EXTERNAL_APIS + 1):  # 存在しうる全てのAPI IDをキーとして初期化
         api_usage_counts[f"api_{i}"] = 0
 
     for req in processed_requests:
         if req.used_api_id is not None:
             api_key = f"api_{req.used_api_id}"
-            if api_key in api_usage_counts: # settingsで定義された範囲内のIDか確認
+            if api_key in api_usage_counts:  # settingsで定義された範囲内のIDか確認
                 api_usage_counts[api_key] += 1
             else:
                 # settingsで定義された範囲外のIDが記録されている場合 (通常は起こりえない)
@@ -125,7 +132,6 @@ def calculate_simulation_statistics(completed_requests: List[Request]) -> Dict[s
                 # 未知のAPI IDとしてカウントすることも可能
                 # api_usage_counts[f"api_unknown_{req.used_api_id}"] = api_usage_counts.get(f"api_unknown_{req.used_api_id}", 0) + 1
 
-
-    stats["api_usage_counts"] = dict(api_usage_counts) # defaultdictを通常のdictに変換して返す
+    stats["api_usage_counts"] = dict(api_usage_counts)  # defaultdictを通常のdictに変換して返す
 
     return stats

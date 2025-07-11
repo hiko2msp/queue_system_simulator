@@ -1,6 +1,6 @@
-from dataclasses import dataclass
-from typing import Optional
 import datetime
+from dataclasses import dataclass
+
 
 @dataclass
 class Request:
@@ -27,9 +27,10 @@ class Request:
                                                  ワーカーによって設定される。
         used_api_id (Optional[int]): 処理に使用されたAPIのID (1からN)。
     """
+
     user_id: str
-    request_time: datetime.datetime # ISO8601からパースされた aware datetime
-    processing_time: float # 単位は秒
+    request_time: datetime.datetime  # ISO8601からパースされた aware datetime
+    processing_time: float  # 単位は秒
 
     # シミュレーション内部で使用する相対時刻 (シミュレーション開始からの経過秒数)
     # main.py で request_time から計算して設定する
@@ -38,4 +39,4 @@ class Request:
     arrival_time_in_queue: float = 0.0
     start_processing_time_by_worker: float = 0.0
     finish_processing_time_by_worker: float = 0.0
-    used_api_id: Optional[int] = None
+    used_api_id: int | None = None

@@ -1,9 +1,10 @@
-from typing import List, Optional, Union, Any
+from src.api_client import APIClient  # APIClient をインポート
 from src.data_model import Request
-from src.queue_manager import FifoQueue, PriorityQueueStrategy # PriorityQueueStrategy をインポート
+from src.queue_manager import PriorityQueueStrategy  # PriorityQueueStrategy をインポート
 from src.worker import Worker
-from src.api_client import APIClient # APIClient をインポート
+
 # NUM_EXTERNAL_APIS と EXTERNAL_API_RPM_LIMIT は APIClient が config から読むので Simulator で直接読む必要はない
+
 
 class Simulator:
     """
@@ -12,7 +13,8 @@ class Simulator:
     リクエストの到着、キューイング、ワーカーによる処理の全体的な流れを管理し、
     イベントドリブンな方法で時間を進めます。
     """
-    def __init__(self, requests: List[Request], num_workers: int, queue_max_size: Optional[int] = None):
+
+    def __init__(self, requests: list[Request], num_workers: int, queue_max_size: int | None = None):
         """
         Simulatorのコンストラクタ。
 
@@ -24,7 +26,7 @@ class Simulator:
                                            Noneの場合は無制限。
         """
         # 入力リクエストは変更しないようにコピーしてソート
-        self.pending_requests: List[Request] = sorted(list(requests), key=lambda r: r.sim_arrival_time)
+        self.pending_requests: list[Request] = sorted(list(requests), key=lambda r: r.sim_arrival_time)
 
         # TODO: 将来的には複数のキューや異なるキュータイプ (例: 優先度キュー) も考慮。
         # その場合、task_queue の管理方法や Worker へのキューの渡し方を変更する必要がある。
@@ -38,21 +40,21 @@ class Simulator:
         # simulator_time_func として self.get_current_time を渡す
         self.api_client = APIClient(simulator_time_func=self.get_current_time)
 
-        self.workers: List[Worker] = [
-            Worker(worker_id=i, task_queue=self.task_queue, api_client=self.api_client)
-            for i in range(num_workers)
+        self.workers: list[Worker] = [
+            Worker(worker_id=i, task_queue=self.task_queue, api_client=self.api_client) for i in range(num_workers)
         ]
         self.current_time: float = 0.0
-        self.completed_requests: List[Request] = [] # 処理済みまたはリジェクトされたリクエスト
+        self.completed_requests: list[Request] = []  # 処理済みまたはリジェクトされたリクエスト
 
         # シミュレーション開始時刻を最初のリクエスト到着時刻に設定（もしあれば）
         # sim_arrival_time は float なので、0 との比較は問題ない
-        if self.pending_requests and self.pending_requests[0].sim_arrival_time >= 0: # sim_arrival_time を使用し、0以上か確認
+        if (
+            self.pending_requests and self.pending_requests[0].sim_arrival_time >= 0
+        ):  # sim_arrival_time を使用し、0以上か確認
             self.current_time = self.pending_requests[0].sim_arrival_time
         else:
             # リクエストがない場合や、最初の到着時刻が0より小さい（通常はないはず）場合は0.0から開始
             self.current_time = 0.0
-
 
     def _get_next_event_time(self) -> float:
         """
@@ -66,7 +68,7 @@ class Simulator:
             float: 次のイベントが発生する最も早い時刻。
                    イベントがない場合は float('inf') を返します。
         """
-        next_event_time = float('inf')
+        next_event_time = float("inf")
 
         # 1. 次のペンディングリクエストの到着時刻
         if self.pending_requests:
@@ -83,7 +85,7 @@ class Simulator:
         """現在のシミュレーション時刻を返す。"""
         return self.current_time
 
-    def run(self) -> List[Request]:
+    def run(self) -> list[Request]:
         """
         シミュレーションを実行します。
 
@@ -105,7 +107,7 @@ class Simulator:
                 # 1. 新しいリクエストの到着を確認し、キューに追加
                 newly_arrived_indices = []
                 for i, req in enumerate(self.pending_requests):
-                    if req.sim_arrival_time <= self.current_time: # sim_arrival_time を使用
+                    if req.sim_arrival_time <= self.current_time:  # sim_arrival_time を使用
                         newly_arrived_indices.append(i)
                     else:
                         break
@@ -141,25 +143,32 @@ class Simulator:
                         # print(f"[Time: {self.current_time:.2f}] Task {completed_task.user_id} completed by Worker {worker.worker_id}. Recorded finish_time: {completed_task.finish_processing_time_by_worker:.2f}. Queue len: {len(self.task_queue)}")
 
                     # 新しいタSKを開始した場合も action_occurred とする
-                    if worker.current_task and new_current_task_id != original_current_task_id: # 新しいタスクが割り当てられた
-                         action_occurred_in_current_step = True
-                    elif worker.current_task and worker.busy_until != original_busy_until and original_current_task_id == new_current_task_id : # 同じタスクだがbusy_untilが更新された場合（0秒処理など特殊ケース）
-                         action_occurred_in_current_step = True
-
+                    if (
+                        worker.current_task
+                        and new_current_task_id != original_current_task_id
+                        or worker.current_task
+                        and worker.busy_until != original_busy_until
+                        and original_current_task_id == new_current_task_id
+                    ):  # 新しいタスクが割り当てられた
+                        action_occurred_in_current_step = True
 
             # 3. 次のイベント時刻に進む
             next_event_time = self._get_next_event_time()
             # print(f"Next event time calculated: {next_event_time}")
 
-            if next_event_time == float('inf'):
-                if not self.pending_requests and self.task_queue.is_empty() and all(not w.current_task for w in self.workers):
+            if next_event_time == float("inf"):
+                if (
+                    not self.pending_requests
+                    and self.task_queue.is_empty()
+                    and all(not w.current_task for w in self.workers)
+                ):
                     # print("--- Simulation End: No more events or tasks. ---")
                     break
                 else:
                     # print(f"Warning: next_event_time is inf, but simulation is not over. Current time: {self.current_time}")
                     # print(f"Pending: {len(self.pending_requests)}, Queue: {len(self.task_queue)}, Workers busy: {sum(1 for w in self.workers if w.current_task)}")
                     # print("Forcing break due to potential deadlock.")
-                    break # Potential deadlock or error in logic
+                    break  # Potential deadlock or error in logic
 
             if next_event_time > self.current_time:
                 self.current_time = next_event_time
@@ -180,11 +189,18 @@ class Simulator:
                 # processing_time = 0 の場合は busy_until = current_time となりうる。
                 # その場合、worker.process_task で完了し、action_occurred が true になる。
                 # そして、再度 _get_next_event_time が呼ばれる。
-                if not (self.pending_requests or not self.task_queue.is_empty() or any(w.current_task for w in self.workers)):
+                if not (
+                    self.pending_requests or not self.task_queue.is_empty() or any(w.current_task for w in self.workers)
+                ):
                     # print("--- Simulation End: All tasks processed and no pending. ---")
-                    break # All tasks processed
+                    break  # All tasks processed
                 pass
 
-        self.completed_requests.sort(key=lambda r: (r.finish_processing_time_by_worker if r.finish_processing_time_by_worker != -1 else float('inf'), r.arrival_time_in_queue))
+        self.completed_requests.sort(
+            key=lambda r: (
+                r.finish_processing_time_by_worker if r.finish_processing_time_by_worker != -1 else float("inf"),
+                r.arrival_time_in_queue,
+            )
+        )
         # print(f"Total completed (incl. rejected): {len(self.completed_requests)}")
         return self.completed_requests
