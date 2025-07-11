@@ -24,7 +24,7 @@ class Simulator:
                                            Noneの場合は無制限。
         """
         # 入力リクエストは変更しないようにコピーしてソート
-        self.pending_requests: List[Request] = sorted(list(requests), key=lambda r: r.request_time)
+        self.pending_requests: List[Request] = sorted(list(requests), key=lambda r: r.sim_arrival_time)
 
         # TODO: 将来的には複数のキューや異なるキュータイプ (例: 優先度キュー) も考慮。
         # その場合、task_queue の管理方法や Worker へのキューの渡し方を変更する必要がある。
@@ -45,8 +45,13 @@ class Simulator:
         self.completed_requests: List[Request] = [] # 処理済みまたはリジェクトされたリクエスト
 
         # シミュレーション開始時刻を最初のリクエスト到着時刻に設定（もしあれば）
-        if self.pending_requests and self.pending_requests[0].request_time > 0:
-            self.current_time = self.pending_requests[0].request_time
+        # sim_arrival_time は float なので、0 との比較は問題ない
+        if self.pending_requests and self.pending_requests[0].sim_arrival_time >= 0: # sim_arrival_time を使用し、0以上か確認
+            self.current_time = self.pending_requests[0].sim_arrival_time
+        else:
+            # リクエストがない場合や、最初の到着時刻が0より小さい（通常はないはず）場合は0.0から開始
+            self.current_time = 0.0
+
 
     def _get_next_event_time(self) -> float:
         """
@@ -64,7 +69,7 @@ class Simulator:
 
         # 1. 次のペンディングリクエストの到着時刻
         if self.pending_requests:
-            next_event_time = min(next_event_time, self.pending_requests[0].request_time)
+            next_event_time = min(next_event_time, self.pending_requests[0].sim_arrival_time)
 
         # 2. ワーカーがタスクを完了する時刻
         for worker in self.workers:
@@ -95,7 +100,7 @@ class Simulator:
                 # 1. 新しいリクエストの到着を確認し、キューに追加
                 newly_arrived_indices = []
                 for i, req in enumerate(self.pending_requests):
-                    if req.request_time <= self.current_time:
+                    if req.sim_arrival_time <= self.current_time: # sim_arrival_time を使用
                         newly_arrived_indices.append(i)
                     else:
                         break
