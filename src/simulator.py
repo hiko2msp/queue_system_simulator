@@ -35,7 +35,8 @@ class Simulator:
         # 必要であればPriorityQueueStrategyを改修し、内部キューのサイズ制限を設定できるようにする必要があります。
 
         # APIClientのインスタンスを作成 (全ワーカーで共有)
-        self.api_client = APIClient()
+        # simulator_time_func として self.get_current_time を渡す
+        self.api_client = APIClient(simulator_time_func=self.get_current_time)
 
         self.workers: List[Worker] = [
             Worker(worker_id=i, task_queue=self.task_queue, api_client=self.api_client)
@@ -77,6 +78,10 @@ class Simulator:
                 next_event_time = min(next_event_time, worker.busy_until)
 
         return next_event_time
+
+    def get_current_time(self) -> float:
+        """現在のシミュレーション時刻を返す。"""
+        return self.current_time
 
     def run(self) -> List[Request]:
         """
@@ -179,7 +184,6 @@ class Simulator:
                     # print("--- Simulation End: All tasks processed and no pending. ---")
                     break # All tasks processed
                 pass
-
 
         self.completed_requests.sort(key=lambda r: (r.finish_processing_time_by_worker if r.finish_processing_time_by_worker != -1 else float('inf'), r.arrival_time_in_queue))
         # print(f"Total completed (incl. rejected): {len(self.completed_requests)}")
