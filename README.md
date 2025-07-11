@@ -40,9 +40,9 @@
 ## 3. 基本的な使い方
 
 ### 3.1. 必要なライブラリのインストール
-`numpy`ライブラリが必要です。`requirements.txt` を使ってインストールできます。
+`numpy`ライブラリが必要です。`uv` を使ってインストールできます。
 ```bash
-pip install -r requirements.txt
+uv sync
 ```
 
 ### 3.2. サンプルデータの生成 (オプション)
