@@ -118,6 +118,10 @@ class PriorityQueueStrategy(Generic[T]):
         if not (0.0 <= priority_bias <= 1.0):
             raise ValueError("priority_biasは0.0から1.0の間である必要があります。")
 
+        # 統計情報用カウンター
+        self.priority_enqueued_count = 0
+        self.normal_enqueued_count = 0
+
     def enqueue(self, item: T) -> bool:
         """
         タスクを適切なキューに追加します。
@@ -132,14 +136,23 @@ class PriorityQueueStrategy(Generic[T]):
         # itemがRequest型でprocessing_time属性を持つことを期待
         if hasattr(item, "processing_time") and isinstance(item.processing_time, (int, float)):
             if item.processing_time < self.priority_threshold_seconds:
-                return self.priority_queue.enqueue(item)
+                enqueued = self.priority_queue.enqueue(item)
+                if enqueued:
+                    self.priority_enqueued_count += 1
+                return enqueued
             else:
-                return self.normal_queue.enqueue(item)
+                enqueued = self.normal_queue.enqueue(item)
+                if enqueued:
+                    self.normal_enqueued_count += 1
+                return enqueued
         else:
             # processing_timeがない、または不正な場合は通常キューに入れるか、エラーを発生させる
             # ここでは通常キューに入れる仕様とする
             # warnings.warn("Item does not have a valid 'processing_time' attribute, enqueuing to normal queue.")
-            return self.normal_queue.enqueue(item)
+            enqueued = self.normal_queue.enqueue(item)
+            if enqueued:
+                self.normal_enqueued_count += 1 # こちらもカウント
+            return enqueued
 
     def dequeue(self) -> T | None:
         """
@@ -241,3 +254,23 @@ class PriorityQueueStrategy(Generic[T]):
         将来的にサイズ制限を導入する場合は、このメソッドのロジックを修正する必要があります。
         """
         return False  # サイズ制限がないため、常に満杯ではない
+
+    # 新しいメソッド
+    def len_priority_queue(self) -> int:
+        """優先キューの現在の長さを返します。"""
+        return len(self.priority_queue)
+
+    def len_normal_queue(self) -> int:
+        """通常キューの現在の長さを返します。"""
+        return len(self.normal_queue)
+
+    def get_queue_counts(self) -> dict[str, int]:
+        """
+        各内部キューにエンキューされたリクエストの総数を返します。
+        Returns:
+            Dict[str, int]: キーが "priority_enqueued", "normal_enqueued" の辞書。
+        """
+        return {
+            "priority_enqueued": self.priority_enqueued_count,
+            "normal_enqueued": self.normal_enqueued_count,
+        }
