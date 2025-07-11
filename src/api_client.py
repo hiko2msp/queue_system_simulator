@@ -1,3 +1,4 @@
+import logging
 from collections import deque
 from collections.abc import Callable  # Callable をインポート
 
@@ -9,7 +10,7 @@ class APIClient:
         self.num_apis = NUM_EXTERNAL_APIS
         self.rpm_limit = EXTERNAL_API_RPM_LIMIT
         self.api_endpoints = [f"https://api.example.com/v1/endpoint{i+1}" for i in range(self.num_apis)]
-        self.request_timestamps = [deque() for _ in range(self.num_apis)]
+        self.request_timestamps: list[deque] = [deque() for _ in range(self.num_apis)]
         self.current_api_index = 0
         self.simulator_time_func = simulator_time_func  # 時間取得関数を保存
 
@@ -34,7 +35,7 @@ class APIClient:
 
             if self._can_make_request(api_index_to_try):
                 # 実際のAPIコールをシミュレート
-                print(f"Making request to API {api_index_to_try + 1} with data: {data}")
+                logging.debug(f"Making request to API {api_index_to_try + 1} with data: {data}")
                 self.request_timestamps[api_index_to_try].append(
                     self.simulator_time_func()
                 )  # time.time() の代わりに simulator_time_func を使用
@@ -45,7 +46,7 @@ class APIClient:
                 # ダミーレスポンス
                 # 429エラーをシミュレートするために、特定の条件下でダミーの429を発生させることも可能
                 # if some_condition_for_429:
-                #     print(f"Simulating 429 error from API {api_index_to_try + 1}")
+                #     logging.debug(f"Simulating 429 error from API {api_index_to_try + 1}")
                 #     # フォールバックをテストするために、意図的に429を発生させる
                 #     if attempts < self.num_apis -1: #最後のAPIでなければ429を返す
                 #          response_status = 429
@@ -57,7 +58,7 @@ class APIClient:
                 response_status = 200  # 仮に常に成功するとする
 
                 if response_status == 429:
-                    print(f"API {api_index_to_try + 1} returned 429 (Rate Limit Exceeded). Trying next API.")
+                    logging.debug(f"API {api_index_to_try + 1} returned 429 (Rate Limit Exceeded). Trying next API.")
                     attempts += 1
                     self.current_api_index = (
                         api_index_to_try + 1
@@ -65,7 +66,7 @@ class APIClient:
                     continue
                 elif response_status == 200:
                     # リクエスト成功
-                    print(f"Request to API {api_index_to_try + 1} successful.")
+                    logging.debug(f"Request to API {api_index_to_try + 1} successful.")
                     self.current_api_index = api_index_to_try  # 成功したAPIを記憶
                     return {
                         "status": "success",
@@ -74,13 +75,13 @@ class APIClient:
                     }
                 else:
                     # その他のエラー
-                    print(f"API {api_index_to_try + 1} returned error {response_status}. Trying next API.")
+                    logging.debug(f"API {api_index_to_try + 1} returned error {response_status}. Trying next API.")
                     attempts += 1
                     self.current_api_index = (api_index_to_try + 1) % self.num_apis
                     continue
             else:
                 # 現在のAPIがレート制限に達している
-                print(f"API {api_index_to_try + 1} is rate limited. Trying next API.")
+                logging.debug(f"API {api_index_to_try + 1} is rate limited. Trying next API.")
                 attempts += 1
                 self.current_api_index = (api_index_to_try + 1) % self.num_apis  # 次の試行のためにインデックスを更新
                 continue
@@ -93,7 +94,7 @@ if __name__ == "__main__":
     # テスト用
     # APIClient のコンストラクタが変更されたため、テストコードも修正が必要
     # ダミーの時間関数を定義
-    current_sim_time = 0
+    current_sim_time = 0.0
 
     def get_dummy_time():
         global current_sim_time
@@ -104,15 +105,15 @@ if __name__ == "__main__":
     client = APIClient(simulator_time_func=get_dummy_time)  # 変更: simulator_time_func を渡す
     for i in range(NUM_EXTERNAL_APIS * EXTERNAL_API_RPM_LIMIT + 5):
         try:
-            print(f"Attempt {i+1}: Current Sim Time: {current_sim_time:.2f}")  # シミュレーション時刻も表示
+            logging.debug(f"Attempt {i+1}: Current Sim Time: {current_sim_time:.2f}")  # シミュレーション時刻も表示
             response = client.make_request({"payload": f"data_{i}"})
-            print(response)
+            logging.debug(response)
         except Exception as e:
-            print(e)
+            logging.debug(e)
             break
         # time.sleep(0.1) # 実際の時間は待たない（get_dummy_timeで進むため）
 
-    print("\n--- Testing Fallback ---")
+    logging.debug("\n--- Testing Fallback ---")
     # RPM制限を意図的に超えさせてフォールバックをテストする
     # (実際のAPIコール部分をコメントアウトしているため、現在のコードでは
     #  _can_make_request が常にTrueを返し、フォールバックのテストが難しい。
@@ -135,11 +136,11 @@ if __name__ == "__main__":
     # client_for_fallback_test = APIClient()
     # for i in range(10): # 10回リクエスト試行
     #     try:
-    #         print(f"Fallback Test Attempt {i+1}:")
+    #         logging.debug(f"Fallback Test Attempt {i+1}:")
     #         # make_request の中で、特定のAPIが429を返すように細工する
     #         # 例えば、api_index_to_try == 0 かつ i > 2 の場合に response_status = 429 とする等
     #         response = client_for_fallback_test.make_request({"payload": f"fallback_data_{i}"})
-    #         print(response)
+    #         logging.debug(response)
     #     except Exception as e:
-    #         print(e)
+    #         logging.debug(e)
     #     time.sleep(0.5) # リクエスト間隔を少し開ける
