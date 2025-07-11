@@ -1,6 +1,6 @@
 from src.api_client import APIClient  # APIClientをインポート
 from src.data_model import Request  # Requestに status, api_attempts などのフィールド追加を検討
-from src.queue_manager import FifoQueue  # PriorityQueueStrategy をインポート
+from src.queue_manager import FifoQueue, PriorityQueueStrategy  # PriorityQueueStrategy をインポート
 
 
 class Worker:
@@ -18,7 +18,7 @@ class Worker:
         task_processing_status (Optional[str]): 現在のタスクのAPI処理結果 ("success", "failed_api_limit")
     """
 
-    def __init__(self, worker_id: int, task_queue: FifoQueue[Request], api_client: APIClient):
+    def __init__(self, worker_id: int, task_queue: FifoQueue[Request] | PriorityQueueStrategy[Request], api_client: APIClient):
         """
         Workerのコンストラクタ。
 

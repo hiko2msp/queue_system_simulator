@@ -143,7 +143,7 @@ class Simulator:
                 # 1. 新しいリクエストの到着を確認し、キューに追加 (現在の時刻までのもの)
                 newly_arrived_indices = []
                 for i, req in enumerate(self.pending_requests):
-                    if req.request_time <= self.current_time:
+                    if req.sim_arrival_time <= self.current_time:  # request_time を sim_arrival_time に変更
                         newly_arrived_indices.append(i)
                     else:
                         break
@@ -190,7 +190,7 @@ class Simulator:
 
                     newly_arrived_indices = []
                     for i, req in enumerate(self.pending_requests):
-                        if req.request_time <= self.current_time:
+                        if req.sim_arrival_time <= self.current_time:  # request_time を sim_arrival_time に変更
                             newly_arrived_indices.append(i)
                         else:
                             break

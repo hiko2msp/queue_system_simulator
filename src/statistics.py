@@ -72,7 +72,9 @@ def calculate_percentiles(data: list[float], percentiles_to_calculate: list[int]
     return results
 
 
-def calculate_simulation_statistics(completed_requests: list[Request]) -> dict[str, float | int]:
+from typing import Any # Any をインポート
+
+def calculate_simulation_statistics(completed_requests: list[Request]) -> dict[str, Any]:
     """
     シミュレーションの完了結果（処理済みおよびリジェクトされたリクエストを含む）から
     主要な統計情報を計算します。
@@ -91,9 +93,9 @@ def calculate_simulation_statistics(completed_requests: list[Request]) -> dict[s
                                             またはリジェクトされた全てのRequestオブジェクトのリスト。
 
     Returns:
-        Dict[str, Union[float, int]]: 計算された統計情報を含む辞書。
+        Dict[str, Any]: 計算された統計情報を含む辞書。
     """
-    stats: dict[str, float | int] = {}
+    stats: dict[str, Any] = {}
 
     processed_requests = [req for req in completed_requests if req.finish_processing_time_by_worker != -1]
     rejected_requests = [req for req in completed_requests if req.finish_processing_time_by_worker == -1]
