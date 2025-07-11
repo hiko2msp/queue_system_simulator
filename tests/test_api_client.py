@@ -1,30 +1,32 @@
 import unittest
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
+
 from src.api_client import APIClient
+
 # from config import settings as test_settings # これは直接使わない
 
-class TestAPIClient(unittest.TestCase):
 
+class TestAPIClient(unittest.TestCase):
     # setUp と tearDown は、モジュールレベルの定数をパッチするため、ここでは不要。
     # 各テストメソッドで直接パッチする。
 
-    @patch('src.api_client.EXTERNAL_API_RPM_LIMIT', 10)
-    @patch('src.api_client.NUM_EXTERNAL_APIS', 3)
-    def test_initialization_with_settings(self): # timeのモックは不要になった
+    @patch("src.api_client.EXTERNAL_API_RPM_LIMIT", 10)
+    @patch("src.api_client.NUM_EXTERNAL_APIS", 3)
+    def test_initialization_with_settings(self):  # timeのモックは不要になった
         # APIClientのコンストラクタは simulator_time_func を必要とする
-        mock_time_func = MagicMock(return_value=0) # 簡単なモック時間関数
+        mock_time_func = MagicMock(return_value=0)  # 簡単なモック時間関数
         client = APIClient(simulator_time_func=mock_time_func)
         self.assertEqual(client.num_apis, 3)
         self.assertEqual(client.rpm_limit, 10)
         self.assertEqual(len(client.api_endpoints), 3)
         self.assertEqual(client.api_endpoints[0], "https://api.example.com/v1/endpoint1")
 
-    @patch('src.api_client.EXTERNAL_API_RPM_LIMIT', 2)
-    @patch('src.api_client.NUM_EXTERNAL_APIS', 1)
-    def test_rate_limit_single_api(self): # timeのモックは不要になった
+    @patch("src.api_client.EXTERNAL_API_RPM_LIMIT", 2)
+    @patch("src.api_client.NUM_EXTERNAL_APIS", 1)
+    def test_rate_limit_single_api(self):  # timeのモックは不要になった
         mock_time_func = MagicMock()
         # simulator_time_func が呼ばれるたびに異なる値を返すように設定
-        mock_time_func.side_effect = [t/10.0 for t in range(100)]
+        mock_time_func.side_effect = [t / 10.0 for t in range(100)]
         client = APIClient(simulator_time_func=mock_time_func)
 
         response1 = client.make_request({"data": "req1"})
@@ -37,10 +39,9 @@ class TestAPIClient(unittest.TestCase):
             client.make_request({"data": "req3"})
         self.assertEqual(len(client.request_timestamps[0]), 2)
 
-
-    @patch('src.api_client.EXTERNAL_API_RPM_LIMIT', 1)
-    @patch('src.api_client.NUM_EXTERNAL_APIS', 2)
-    def test_fallback_mechanism(self): # timeのモックは不要になった
+    @patch("src.api_client.EXTERNAL_API_RPM_LIMIT", 1)
+    @patch("src.api_client.NUM_EXTERNAL_APIS", 2)
+    def test_fallback_mechanism(self):  # timeのモックは不要になった
         mock_time_func = MagicMock()
         mock_time_func.side_effect = [t * 0.1 for t in range(100)]
         client = APIClient(simulator_time_func=mock_time_func)
@@ -56,7 +57,7 @@ class TestAPIClient(unittest.TestCase):
         # 2回目: API 1 はレート制限、API 2 を使用
         # print("Fallback test: Request 2")
         response2 = client.make_request({"data": "req2_api2"})
-        self.assertEqual(response2["api_used_id"], 2) # API 2 が使われる
+        self.assertEqual(response2["api_used_id"], 2)  # API 2 が使われる
         self.assertEqual(len(client.request_timestamps[0]), 1)
         self.assertEqual(len(client.request_timestamps[1]), 1)
         # current_api_index は 1 を指すはず
@@ -68,29 +69,26 @@ class TestAPIClient(unittest.TestCase):
         self.assertEqual(len(client.request_timestamps[0]), 1)
         self.assertEqual(len(client.request_timestamps[1]), 1)
 
-
-    @patch('src.api_client.EXTERNAL_API_RPM_LIMIT', 1)
-    @patch('src.api_client.NUM_EXTERNAL_APIS', 2)
-    def test_all_apis_rate_limited_then_exception(self): # timeのモックは不要になった
+    @patch("src.api_client.EXTERNAL_API_RPM_LIMIT", 1)
+    @patch("src.api_client.NUM_EXTERNAL_APIS", 2)
+    def test_all_apis_rate_limited_then_exception(self):  # timeのモックは不要になった
         mock_time_func = MagicMock()
         mock_time_func.side_effect = [t * 0.1 for t in range(100)]
         client = APIClient(simulator_time_func=mock_time_func)
 
         # API 1 を使用 (成功)
-        client.make_request({"data": "req1"}) # API 1 (index 0) を使用, current_api_index = 0
+        client.make_request({"data": "req1"})  # API 1 (index 0) を使用, current_api_index = 0
         self.assertEqual(len(client.request_timestamps[0]), 1)
         self.assertEqual(len(client.request_timestamps[1]), 0)
-
 
         # API 2 を使用 (成功)
         # make_request は (initial_api_index + attempts) % self.num_apis で試す
         # initial_api_index は self.current_api_index (前回成功したAPIインデックス)
         # 前回 API 0 が成功したので、次は API 0 から試行 -> レート超過
         # 次に API 1 を試行 -> 成功
-        client.make_request({"data": "req2"}) # API 2 (index 1) を使用, current_api_index = 1
-        self.assertEqual(len(client.request_timestamps[0]), 1) # API 0 は変わらず
-        self.assertEqual(len(client.request_timestamps[1]), 1) # API 1 が使われる
-
+        client.make_request({"data": "req2"})  # API 2 (index 1) を使用, current_api_index = 1
+        self.assertEqual(len(client.request_timestamps[0]), 1)  # API 0 は変わらず
+        self.assertEqual(len(client.request_timestamps[1]), 1)  # API 1 が使われる
 
         # 3回目のリクエスト (両APIともレート制限により例外)
         # 前回 API 1 が成功したので、次は API 1 から試行 -> レート超過
@@ -100,10 +98,9 @@ class TestAPIClient(unittest.TestCase):
         self.assertEqual(len(client.request_timestamps[0]), 1)
         self.assertEqual(len(client.request_timestamps[1]), 1)
 
-
-    @patch('src.api_client.EXTERNAL_API_RPM_LIMIT', 1)
-    @patch('src.api_client.NUM_EXTERNAL_APIS', 1)
-    def test_rate_limit_reset_after_one_minute(self): # timeのモックは不要になった
+    @patch("src.api_client.EXTERNAL_API_RPM_LIMIT", 1)
+    @patch("src.api_client.NUM_EXTERNAL_APIS", 1)
+    def test_rate_limit_reset_after_one_minute(self):  # timeのモックは不要になった
         mock_time_func = MagicMock()
         client = APIClient(simulator_time_func=mock_time_func)
 
@@ -118,7 +115,7 @@ class TestAPIClient(unittest.TestCase):
         mock_time_func.return_value = 10.0
         with self.assertRaisesRegex(Exception, "All external APIs are unavailable or rate limited."):
             client.make_request({"data": "req2_rate_limited"})
-        self.assertEqual(len(client.request_timestamps[0]), 1) # タイムスタンプは追加されない
+        self.assertEqual(len(client.request_timestamps[0]), 1)  # タイムスタンプは追加されない
 
         # 60.1秒経過 (最初の呼び出しから1分以上経過)
         mock_time_func.return_value = 60.1
@@ -128,5 +125,6 @@ class TestAPIClient(unittest.TestCase):
         self.assertEqual(len(client.request_timestamps[0]), 1)
         self.assertEqual(client.request_timestamps[0][0], 60.1)
 
-if __name__ == '__main__':
-    unittest.main(argv=['first-arg-is-ignored'], exit=False)
+
+if __name__ == "__main__":
+    unittest.main(argv=["first-arg-is-ignored"], exit=False)

@@ -1,13 +1,16 @@
 import argparse
+import datetime  # datetime をインポート
+
+# import json # 結果をJSON形式で出力するため (今回は標準出力のみ)
+import numpy as np  # main関数内で statistics をインポートするために必要
+
 from src.csv_parser import parse_csv
 from src.simulator import Simulator
 from src.statistics import calculate_simulation_statistics
-# import json # 結果をJSON形式で出力するため (今回は標準出力のみ)
-import numpy as np # main関数内で statistics をインポートするために必要
-import datetime # datetime をインポート
 
 # scripts/generate_sample_data.py と同じ基準時刻を使用
-SIMULATION_START_TIME = datetime.datetime(2023, 1, 1, 0, 0, 0, tzinfo=datetime.timezone.utc)
+SIMULATION_START_TIME = datetime.datetime(2023, 1, 1, 0, 0, 0, tzinfo=datetime.UTC)
+
 
 def main():
     parser = argparse.ArgumentParser(description="システムアクセスシミュレーター")
@@ -21,7 +24,9 @@ def main():
     args = parser.parse_args()
 
     print(f"シミュレーション開始: {args.csv_file}")
-    print(f"ワーカー数: {args.num_workers}, キュー最大サイズ: {args.queue_size if args.queue_size is not None else '無制限'}")
+    print(
+        f"ワーカー数: {args.num_workers}, キュー最大サイズ: {args.queue_size if args.queue_size is not None else '無制限'}"
+    )
     # if hasattr(args, "admission_strategy"): # 将来的に追加された場合
     #     print(f"アドミッション戦略: {args.admission_strategy}")
 
@@ -47,8 +52,10 @@ def main():
         if req_data.request_time < SIMULATION_START_TIME:
             # このケースは通常発生しないはず (generate_sample_data.py が SIMULATION_START_TIME 以降の時刻を生成するため)
             # 念のため警告
-            print(f"警告: リクエスト {req_data.user_id} の request_time ({req_data.request_time}) "
-                  f"がシミュレーション開始時刻 ({SIMULATION_START_TIME}) より前です。相対時間は負になります。")
+            print(
+                f"警告: リクエスト {req_data.user_id} の request_time ({req_data.request_time}) "
+                f"がシミュレーション開始時刻 ({SIMULATION_START_TIME}) より前です。相対時間は負になります。"
+            )
 
         # sim_arrival_time を計算 (SIMULATION_START_TIME からの経過秒数)
         # req_data は Request 型のインスタンスなので、直接属性を設定できる
@@ -60,11 +67,10 @@ def main():
     #     if r_idx < 5: # 最初の5件だけ表示
     #         print(f"Debug: User: {r_val.user_id}, ISO: {r_val.request_time}, SimArrival: {r_val.sim_arrival_time:.6f}, ProcTime: {r_val.processing_time}")
 
-
     simulator = Simulator(
-        requests=requests_for_simulator, # sim_arrival_time が設定されたリストを渡す
+        requests=requests_for_simulator,  # sim_arrival_time が設定されたリストを渡す
         num_workers=args.num_workers,
-        queue_max_size=args.queue_size
+        queue_max_size=args.queue_size,
     )
 
     completed_tasks = simulator.run()
@@ -88,45 +94,44 @@ def main():
     #     )
     # print("-----------------------------\n")
 
-
     statistics = calculate_simulation_statistics(completed_tasks)
 
     print("\n--- シミュレーション統計 ---")
 
-    print(f"  総リクエスト数 (入力): {len(parsed_requests)}") # 変更: requests -> parsed_requests
+    print(f"  総リクエスト数 (入力): {len(parsed_requests)}")  # 変更: requests -> parsed_requests
     print(f"  処理完了リクエスト数: {statistics['total_requests_processed']}")
     print(f"  リジェクトリクエスト数: {statistics['total_requests_rejected']}")
 
-    avg_q_time = statistics['average_queuing_time']
+    avg_q_time = statistics["average_queuing_time"]
     print(f"  平均キューイング時間: {avg_q_time:.4f}" if not np.isnan(avg_q_time) else "  平均キューイング時間: N/A")
 
-    p50 = statistics['p50']
+    p50 = statistics["p50"]
     print(f"  キューイング時間 P50: {p50:.4f}" if not np.isnan(p50) else "  キューイング時間 P50: N/A")
 
-    p75 = statistics['p75']
+    p75 = statistics["p75"]
     print(f"  キューイング時間 P75: {p75:.4f}" if not np.isnan(p75) else "  キューイング時間 P75: N/A")
 
-    p90 = statistics['p90']
+    p90 = statistics["p90"]
     print(f"  キューイング時間 P90: {p90:.4f}" if not np.isnan(p90) else "  キューイング時間 P90: N/A")
 
-    p99 = statistics['p99']
+    p99 = statistics["p99"]
     print(f"  キューイング時間 P99: {p99:.4f}" if not np.isnan(p99) else "  キューイング時間 P99: N/A")
 
     if "api_usage_counts" in statistics:
         print("\n  --- API使用回数 ---")
         api_counts = statistics["api_usage_counts"]
-        if isinstance(api_counts, dict): # 型チェック
+        if isinstance(api_counts, dict):  # 型チェック
             if not api_counts:
                 print("    API使用実績なし")
             else:
-                for api_id_key, count in sorted(api_counts.items()): # キーでソートして表示
+                for api_id_key, count in sorted(api_counts.items()):  # キーでソートして表示
                     # api_id_key は "api_X" の形式を想定
                     print(f"    {api_id_key}: {count} 回")
         else:
             print(f"    API使用回数データ形式エラー: {type(api_counts)}")
 
-
     print("--------------------------\n")
+
 
 if __name__ == "__main__":
     main()
