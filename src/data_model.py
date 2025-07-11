@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from typing import Optional # Optionalをインポート
 
 @dataclass
 class Request:
@@ -22,3 +23,4 @@ class Request:
     arrival_time_in_queue: float = 0.0
     start_processing_time_by_worker: float = 0.0
     finish_processing_time_by_worker: float = 0.0
+    used_api_id: Optional[int] = None # 処理に使用されたAPIのID (1からN)

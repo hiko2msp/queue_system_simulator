@@ -86,6 +86,21 @@ def main():
 
     p99 = statistics['p99']
     print(f"  キューイング時間 P99: {p99:.4f}" if not np.isnan(p99) else "  キューイング時間 P99: N/A")
+
+    if "api_usage_counts" in statistics:
+        print("\n  --- API使用回数 ---")
+        api_counts = statistics["api_usage_counts"]
+        if isinstance(api_counts, dict): # 型チェック
+            if not api_counts:
+                print("    API使用実績なし")
+            else:
+                for api_id_key, count in sorted(api_counts.items()): # キーでソートして表示
+                    # api_id_key は "api_X" の形式を想定
+                    print(f"    {api_id_key}: {count} 回")
+        else:
+            print(f"    API使用回数データ形式エラー: {type(api_counts)}")
+
+
     print("--------------------------\n")
 
 if __name__ == "__main__":

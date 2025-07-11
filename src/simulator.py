@@ -2,6 +2,8 @@ from typing import List, Optional
 from src.data_model import Request
 from src.queue_manager import FifoQueue
 from src.worker import Worker
+from src.api_client import APIClient # APIClient をインポート
+# NUM_EXTERNAL_APIS と EXTERNAL_API_RPM_LIMIT は APIClient が config から読むので Simulator で直接読む必要はない
 
 class Simulator:
     """
@@ -28,7 +30,13 @@ class Simulator:
         # その場合、task_queue の管理方法や Worker へのキューの渡し方を変更する必要がある。
         self.task_queue: FifoQueue[Request] = FifoQueue(max_size=queue_max_size)
 
-        self.workers: List[Worker] = [Worker(worker_id=i, task_queue=self.task_queue) for i in range(num_workers)]
+        # APIClientのインスタンスを作成 (全ワーカーで共有)
+        self.api_client = APIClient()
+
+        self.workers: List[Worker] = [
+            Worker(worker_id=i, task_queue=self.task_queue, api_client=self.api_client)
+            for i in range(num_workers)
+        ]
         self.current_time: float = 0.0
         self.completed_requests: List[Request] = [] # 処理済みまたはリジェクトされたリクエスト
 

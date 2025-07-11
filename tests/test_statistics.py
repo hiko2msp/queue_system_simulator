@@ -127,5 +127,60 @@ class TestStatistics(unittest.TestCase):
         self.assertAlmostEqual(stats["p90"], 0.1)
         self.assertAlmostEqual(stats["p99"], 0.1)
 
+    def test_calculate_simulation_statistics_api_usage(self):
+        # settings.NUM_EXTERNAL_APIS をテスト用に設定
+        from config import settings as test_settings
+        original_num_apis = test_settings.NUM_EXTERNAL_APIS
+        test_settings.NUM_EXTERNAL_APIS = 3 # テスト中は3つのAPIがあると仮定
+
+        requests = [
+            Request("u1", 0, 1, used_api_id=1, finish_processing_time_by_worker=1.0),
+            Request("u2", 0, 1, used_api_id=2, finish_processing_time_by_worker=1.0),
+            Request("u3", 0, 1, used_api_id=1, finish_processing_time_by_worker=1.0),
+            Request("u4", 0, 1, used_api_id=3, finish_processing_time_by_worker=1.0),
+            Request("u5", 0, 1, used_api_id=None, finish_processing_time_by_worker=1.0), # API IDなし
+            Request("u6", 0, 1, used_api_id=1, finish_processing_time_by_worker=1.0),
+            Request("u7", 0, 1, used_api_id=4, finish_processing_time_by_worker=1.0), # 想定外のAPI ID
+            Request("u8", 0, 1, used_api_id=2, finish_processing_time_by_worker=-1), # リジェクトされたタスク (API使用カウントに影響しない)
+        ]
+
+        # calculate_simulation_statistics は src.statistics モジュールレベルで settings を import しているため、
+        # リロードが必要な場合がある。今回はテスト実行時に settings が評価されることを期待。
+        # (より堅牢なのは、NUM_EXTERNAL_APIS を関数に渡すか、クラスのメソッドにするなど依存性を注入する形)
+        import importlib
+        from src import statistics
+        importlib.reload(statistics) # settingsの変更を反映させるため
+
+        stats = statistics.calculate_simulation_statistics(requests)
+
+        expected_api_usage = {
+            "api_1": 3, # u1, u3, u6
+            "api_2": 1, # u2
+            "api_3": 1, # u4
+            # api_4 は NUM_EXTERNAL_APIS = 3 の範囲外なので、基本的にはキーとして存在しないか、
+            # もし未知のキーとしてカウントするロジックがあればそちらで。現在の実装ではprint Warningして無視。
+            # テストケースのu7は、現状のロジックではapi_usage_countsに含まれない（Warningが出る）
+        }
+        # NUM_EXTERNAL_APIS に基づいて初期化されるので、キーは存在するはず
+        self.assertIn("api_usage_counts", stats)
+        actual_counts = stats["api_usage_counts"]
+
+        self.assertEqual(actual_counts.get("api_1", 0), 3)
+        self.assertEqual(actual_counts.get("api_2", 0), 1)
+        self.assertEqual(actual_counts.get("api_3", 0), 1)
+        # api_4 は NUM_EXTERNAL_APIS=3 のため、キーとして存在しないか、値が0のはず
+        self.assertNotIn("api_4", actual_counts, "API ID outside NUM_EXTERNAL_APIS should not be a primary key unless handled explicitly")
+        # または、もしキーが必ず作られるなら self.assertEqual(actual_counts.get("api_4", 0), 0)
+
+        # 処理されたリクエスト (u8以外) のうち、used_api_idがNoneでないものは6件 (u1,u2,u3,u4,u6,u7)
+        # そのうち、NUM_EXTERNAL_APISの範囲内 (1,2,3) なのは5件 (u1,u2,u3,u4,u6)
+        # よって、カウントの合計は 3+1+1 = 5
+        self.assertEqual(sum(actual_counts.values()), 5)
+
+
+        # settingsを元に戻す
+        test_settings.NUM_EXTERNAL_APIS = original_num_apis
+        importlib.reload(statistics) # 元のsettings値を反映させる
+
 if __name__ == '__main__':
     unittest.main()
