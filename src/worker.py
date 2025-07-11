@@ -1,6 +1,6 @@
-from typing import Optional
+from typing import Optional, Union, Any
 from src.data_model import Request # Requestに status, api_attempts などのフィールド追加を検討
-from src.queue_manager import FifoQueue
+from src.queue_manager import FifoQueue, PriorityQueueStrategy # PriorityQueueStrategy をインポート
 from src.api_client import APIClient # APIClientをインポート
 
 class Worker:
@@ -10,7 +10,7 @@ class Worker:
 
     Attributes:
         worker_id (int): ワーカーの一意な識別子。
-        task_queue (FifoQueue[Request]): ワーカーがタスクを取得するキュー。
+        task_queue (Union[FifoQueue[Request], PriorityQueueStrategy, Any]): ワーカーがタスクを取得するキュー。 # Anyは一時的な措置、より厳密な型も検討可
         api_client (APIClient): 外部APIと通信するためのクライアント。
         current_task (Optional[Request]): 現在処理中のタスク。アイドル状態の場合はNone。
         busy_until (float): ワーカーが現在のタスクの処理を完了するシミュレーション時刻。

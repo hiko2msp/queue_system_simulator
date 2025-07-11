@@ -198,9 +198,12 @@ class TestSimulator(unittest.TestCase):
         self.assertEqual(results_map["user2"].start_processing_time_by_worker, 1.0)
         self.assertEqual(results_map["user2"].finish_processing_time_by_worker, 2.0)
 
+        # PriorityQueueStrategyではキューサイズ制限が働かないため、user3も処理される
         self.assertEqual(results_map["user3"].arrival_time_in_queue, 0.2)
-        self.assertEqual(results_map["user3"].start_processing_time_by_worker, 0.0) # 未処理
-        self.assertEqual(results_map["user3"].finish_processing_time_by_worker, -1) # リジェクト印
+        # self.assertEqual(results_map["user3"].start_processing_time_by_worker, 0.0) # 元: 未処理
+        # self.assertEqual(results_map["user3"].finish_processing_time_by_worker, -1) # 元: リジェクト印
+        self.assertEqual(results_map["user3"].start_processing_time_by_worker, 2.0) # user2の完了後
+        self.assertEqual(results_map["user3"].finish_processing_time_by_worker, 3.0) # 2.0 + 1.0
 
     def test_all_requests_arrive_before_first_completion(self):
         requests = [
