@@ -114,7 +114,17 @@ class Simulator:
         print(f"Formatted Time: {hours:02d}:{minutes:02d}:{seconds:02d}")
 
         print(f"Pending Requests: {len(self.pending_requests)}")
-        print(f"Tasks in Queue: {len(self.task_queue)}")
+        # キューの状態表示を詳細化
+        if isinstance(self.task_queue, PriorityQueueStrategy):
+            # PriorityQueueStrategyの場合、各内部キューの長さを表示
+            priority_len = self.task_queue.len_priority_queue()
+            normal_len = self.task_queue.len_normal_queue()
+            print(f"Tasks in Priority Queue: {priority_len}")
+            print(f"Tasks in Normal Queue: {normal_len}")
+            print(f"Total Tasks in Queue: {priority_len + normal_len}")
+        else:
+            # それ以外のキュータイプの場合 (例: FifoQueue)
+            print(f"Tasks in Queue: {len(self.task_queue)}")
 
         active_workers = sum(1 for w in self.workers if w.current_task)
         print(f"Active Workers: {active_workers}/{len(self.workers)}")

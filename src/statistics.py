@@ -72,25 +72,29 @@ def calculate_percentiles(data: list[float], percentiles_to_calculate: list[int]
     return results
 
 
-from typing import Any # Any をインポート
+from typing import Any, Dict # Dict をインポート
 
-def calculate_simulation_statistics(completed_requests: list[Request]) -> dict[str, Any]:
+def calculate_simulation_statistics(
+    completed_requests: list[Request],
+    queue_counts: dict[str, int] | None = None # 新しい引数
+) -> dict[str, Any]:
     """
-    シミュレーションの完了結果（処理済みおよびリジェクトされたリクエストを含む）から
-    主要な統計情報を計算します。
+    シミュレーションの完了結果（処理済みおよびリジェクトされたリクエストを含む）と
+    キューの統計情報から主要な統計情報を計算します。
 
     計算される統計情報:
     - total_requests_processed (int): 処理が正常に完了したリクエストの総数。
     - total_requests_rejected (int): キュー満杯などの理由でリジェクトされたリクエストの総数。
-    - average_queuing_time (float): 処理されたリクエストの平均キューイング時間。処理済みリクエストがない場合は np.nan。
-    - p50 (float): キューイング時間の50パーセンタイル（中央値）。処理済みリクエストがない場合は np.nan。
-    - p75 (float): キューイング時間の75パーセンタイル。処理済みリクエストがない場合は np.nan。
-    - p90 (float): キューイング時間の90パーセンタイル。処理済みリクエストがない場合は np.nan。
-    - p99 (float): キューイング時間の99パーセンタイル。処理済みリクエストがない場合は np.nan。
+    - average_queuing_time (float): 処理されたリクエストの平均キューイング時間。
+    - p50, p75, p90, p99 (float): キューイング時間の各パーセンタイル。
+    - api_usage_counts (Dict[str, int]): 各APIの使用回数。
+    - priority_queue_enqueued_total (int): 優先キューにエンキューされたリクエスト総数。
+    - normal_queue_enqueued_total (int): 通常キューにエンキューされたリクエスト総数。
 
     Args:
-        completed_requests (List[Request]): シミュレーションで処理が完了した、
-                                            またはリジェクトされた全てのRequestオブジェクトのリスト。
+        completed_requests (List[Request]): 処理完了またはリジェクトされたリクエストのリスト。
+        queue_counts (Optional[Dict[str, int]]): キューに関するカウント情報。
+            例: {"priority_enqueued": count1, "normal_enqueued": count2}
 
     Returns:
         Dict[str, Any]: 計算された統計情報を含む辞書。
@@ -135,5 +139,16 @@ def calculate_simulation_statistics(completed_requests: list[Request]) -> dict[s
                 # api_usage_counts[f"api_unknown_{req.used_api_id}"] = api_usage_counts.get(f"api_unknown_{req.used_api_id}", 0) + 1
 
     stats["api_usage_counts"] = dict(api_usage_counts)  # defaultdictを通常のdictに変換して返す
+
+    # キュー関連の統計情報を追加
+    if queue_counts:
+        stats["priority_queue_enqueued_total"] = queue_counts.get("priority_enqueued", 0)
+        stats["normal_queue_enqueued_total"] = queue_counts.get("normal_enqueued", 0)
+    else: # queue_counts が None の場合や、キーが存在しない場合のデフォルト値
+        stats["priority_queue_enqueued_total"] = 0
+        stats["normal_queue_enqueued_total"] = 0
+        # もし simulator が PriorityQueueStrategy を使っていない場合、
+        # これらの統計は意味を持たないかもしれないので、0 または np.nan とするかは要検討。
+        # ここでは、渡されなければ0とする。
 
     return stats

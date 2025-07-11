@@ -106,7 +106,13 @@ def main():
     #     )
     # logging.debug("-----------------------------\n")
 
-    statistics = calculate_simulation_statistics(completed_tasks)
+    # completed_tasks = simulator.run() の後に追加
+    queue_stats_to_pass = None
+    if hasattr(simulator.task_queue, "get_queue_counts"):
+        # get_queue_counts が存在する場合のみ呼び出す (FifoQueueなど他のキュータイプの場合を考慮)
+        queue_stats_to_pass = simulator.task_queue.get_queue_counts()
+
+    statistics = calculate_simulation_statistics(completed_tasks, queue_counts=queue_stats_to_pass)
 
     logging.debug("\n--- シミュレーション統計 ---")
 
@@ -143,6 +149,12 @@ def main():
                     logging.debug(f"    {api_id_key}: {count} 回")
         else:
             logging.debug(f"    API使用回数データ形式エラー: {type(api_counts)}")
+
+    # キュー統計情報の表示を追加
+    if queue_stats_to_pass: # queue_stats_to_pass が None でない、つまり PriorityQueueStrategy の場合
+        logging.debug("\n  --- キュー統計 (エンキュー総数) ---")
+        logging.debug(f"    優先キューへのエンキュー総数: {statistics.get('priority_queue_enqueued_total', 'N/A')}")
+        logging.debug(f"    通常キューへのエンキュー総数: {statistics.get('normal_queue_enqueued_total', 'N/A')}")
 
     logging.debug("--------------------------\n")
 

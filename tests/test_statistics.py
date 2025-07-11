@@ -168,10 +168,16 @@ class TestStatistics(unittest.TestCase):
         ]
         # Queuing times for processed: [0.0, 0.9, 0.0, 1.7]
 
-        stats = calculate_simulation_statistics(requests)
+        # queue_counts を渡すように変更
+        queue_counts_data = {"priority_enqueued": 3, "normal_enqueued": 2} # 仮の値
+        stats = calculate_simulation_statistics(requests, queue_counts=queue_counts_data)
+
         self.assertEqual(stats["total_requests_processed"], 4)
         self.assertEqual(stats["total_requests_rejected"], 1)
         self.assertAlmostEqual(stats["average_queuing_time"], 0.65)
+        # 新しいアサーション
+        self.assertEqual(stats["priority_queue_enqueued_total"], 3)
+        self.assertEqual(stats["normal_queue_enqueued_total"], 2)
         self.assertAlmostEqual(stats["p50"], 0.45)
         self.assertAlmostEqual(stats["p75"], 1.1)
         self.assertAlmostEqual(stats["p90"], 1.46)
@@ -196,20 +202,41 @@ class TestStatistics(unittest.TestCase):
                 finish_processing_time_by_worker=-1,
             ),
         ]
-        stats = calculate_simulation_statistics(requests)
+        # queue_counts を渡すように変更
+        queue_counts_data = {"priority_enqueued": 1, "normal_enqueued": 1} # 仮の値
+        stats = calculate_simulation_statistics(requests, queue_counts=queue_counts_data)
+
         self.assertEqual(stats["total_requests_processed"], 0)
         self.assertEqual(stats["total_requests_rejected"], 2)
         self.assertTrue(np.isnan(stats["average_queuing_time"]))
+        # 新しいアサーション
+        self.assertEqual(stats["priority_queue_enqueued_total"], 1)
+        self.assertEqual(stats["normal_queue_enqueued_total"], 1)
         self.assertTrue(np.isnan(stats["p50"]))
         self.assertTrue(np.isnan(stats["p75"]))
 
     def test_calculate_simulation_statistics_no_requests(self):
-        stats = calculate_simulation_statistics([])
-        self.assertEqual(stats["total_requests_processed"], 0)
-        self.assertEqual(stats["total_requests_rejected"], 0)
-        self.assertTrue(np.isnan(stats["average_queuing_time"]))
-        self.assertTrue(np.isnan(stats["p50"]))
-        self.assertTrue(np.isnan(stats["p75"]))
+        # queue_counts=None (デフォルト) の場合
+        stats_none_counts = calculate_simulation_statistics([])
+        self.assertEqual(stats_none_counts["total_requests_processed"], 0)
+        self.assertEqual(stats_none_counts["total_requests_rejected"], 0)
+        self.assertTrue(np.isnan(stats_none_counts["average_queuing_time"]))
+        self.assertEqual(stats_none_counts["priority_queue_enqueued_total"], 0) # default
+        self.assertEqual(stats_none_counts["normal_queue_enqueued_total"], 0)   # default
+        self.assertTrue(np.isnan(stats_none_counts["p50"]))
+        self.assertTrue(np.isnan(stats_none_counts["p75"]))
+
+        # queue_counts={} (空辞書) の場合
+        stats_empty_counts = calculate_simulation_statistics([], queue_counts={})
+        self.assertEqual(stats_empty_counts["priority_queue_enqueued_total"], 0) # get default
+        self.assertEqual(stats_empty_counts["normal_queue_enqueued_total"], 0)   # get default
+
+        # queue_counts にデータがある場合
+        queue_counts_data = {"priority_enqueued": 5, "normal_enqueued": 10}
+        stats_with_counts = calculate_simulation_statistics([], queue_counts=queue_counts_data)
+        self.assertEqual(stats_with_counts["priority_queue_enqueued_total"], 5)
+        self.assertEqual(stats_with_counts["normal_queue_enqueued_total"], 10)
+
 
     def test_calculate_simulation_statistics_one_processed_request(self):
         requests = [
@@ -222,10 +249,16 @@ class TestStatistics(unittest.TestCase):
                 finish_processing_time_by_worker=1.1,
             ),  # Q time = 0.1
         ]
-        stats = calculate_simulation_statistics(requests)
+        # queue_counts を渡すように変更
+        queue_counts_data = {"priority_enqueued": 1, "normal_enqueued": 0} # 仮の値
+        stats = calculate_simulation_statistics(requests, queue_counts=queue_counts_data)
+
         self.assertEqual(stats["total_requests_processed"], 1)
         self.assertEqual(stats["total_requests_rejected"], 0)
         self.assertAlmostEqual(stats["average_queuing_time"], 0.1)
+        # 新しいアサーション
+        self.assertEqual(stats["priority_queue_enqueued_total"], 1)
+        self.assertEqual(stats["normal_queue_enqueued_total"], 0)
         self.assertAlmostEqual(stats["p50"], 0.1)
         self.assertAlmostEqual(stats["p75"], 0.1)
         self.assertAlmostEqual(stats["p90"], 0.1)
@@ -256,11 +289,24 @@ class TestStatistics(unittest.TestCase):
         # (より堅牢なのは、NUM_EXTERNAL_APIS を関数に渡すか、クラスのメソッドにするなど依存性を注入する形)
         import importlib
 
-        from src import statistics
+        from src import statistics as stats_module # エイリアス変更
 
-        importlib.reload(statistics)  # settingsの変更を反映させるため
+        importlib.reload(stats_module)  # settingsの変更を反映させるため
 
-        stats = statistics.calculate_simulation_statistics(requests)
+        # queue_counts を適切に設定
+        queue_counts_data = {"priority_enqueued": len(requests) // 2, "normal_enqueued": len(requests) - (len(requests) // 2)}
+        # キューイング時間計算に必要な属性をダミーで設定
+        for req in requests:
+            if hasattr(req, 'finish_processing_time_by_worker') and req.finish_processing_time_by_worker != -1:
+                if not hasattr(req, 'arrival_time_in_queue'):
+                    req.arrival_time_in_queue = 0.0
+                if not hasattr(req, 'start_processing_time_by_worker'):
+                    req.start_processing_time_by_worker = 0.0
+            # sim_arrival_time と processing_time は Request のコンストラクタで必須かもしれないので、
+            # Request の呼び出し側で設定されていることを期待。
+            # このテストケースでは Request(...) の引数が user_id, placeholder, placeholder, kwargs の形式
+
+        stats = stats_module.calculate_simulation_statistics(requests, queue_counts=queue_counts_data)
 
         expected_api_usage = {
             "api_1": 3,  # u1, u3, u6
@@ -290,9 +336,13 @@ class TestStatistics(unittest.TestCase):
         # よって、カウントの合計は 3+1+1 = 5
         self.assertEqual(sum(actual_counts.values()), 5)
 
+        # 新しいキュー統計のアサーション
+        self.assertEqual(stats["priority_queue_enqueued_total"], queue_counts_data["priority_enqueued"])
+        self.assertEqual(stats["normal_queue_enqueued_total"], queue_counts_data["normal_enqueued"])
+
         # settingsを元に戻す
         test_settings.NUM_EXTERNAL_APIS = original_num_apis
-        importlib.reload(statistics)  # 元のsettings値を反映させる
+        importlib.reload(stats_module)  # 元のsettings値を反映させる
 
 
 if __name__ == "__main__":
