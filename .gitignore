@@ -1,0 +1,6 @@
+# Python cache
+__pycache__/
+*.pyc
+
+# Generated sample data
+sample_data_*.csv
