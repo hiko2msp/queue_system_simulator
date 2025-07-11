@@ -61,7 +61,11 @@ class APIClient:
                     # リクエスト成功
                     print(f"Request to API {api_index_to_try + 1} successful.")
                     self.current_api_index = api_index_to_try # 成功したAPIを記憶
-                    return {"status": "success", "api_used": api_index_to_try + 1, "data": f"response from {self.api_endpoints[api_index_to_try]}"}
+                    return {
+                        "status": "success",
+                        "api_used_id": api_index_to_try + 1, # 1から始まるAPI ID
+                        "data": f"response from {self.api_endpoints[api_index_to_try]}"
+                    }
                 else:
                     # その他のエラー
                     print(f"API {api_index_to_try + 1} returned error {response_status}. Trying next API.")

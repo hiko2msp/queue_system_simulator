@@ -18,7 +18,7 @@
 -   `EXTERNAL_API_RPM_LIMIT` (int): 各外部APIの1分あたりのリクエスト上限数（RPM: Requests Per Minute）。
 
 ### 2.2. `src/data_model.py`
--   **`Request`**: シミュレーション内の単一のリクエストを表すデータクラス。リクエストID、到着時刻、処理時間、およびシミュレーション中に記録される各種タイムスタンプ（キュー到着時刻、処理開始/終了時刻）を保持します。
+-   **`Request`**: シミュレーション内の単一のリクエストを表すデータクラス。リクエストID、到着時刻、処理時間、およびシミュレーション中に記録される各種タイムスタンプ（キュー到着時刻、処理開始/終了時刻）を保持します。API呼び出しが成功した場合には、使用された外部APIのID (`used_api_id`) も記録されます。
     *(将来的にはAPI呼び出しの成否や試行回数などの情報も追加される可能性があります。)*
 
 ### 2.3. `src/csv_parser.py`
@@ -51,7 +51,7 @@
 ### 2.8. `src/statistics.py`
 -   **`calculate_queuing_times(processed_requests: List[Request]) -> List[float]`**: 処理済みリクエストのリストから、各リクエストのキューイング時間（キュー到着から処理開始までの時間）を計算します。
 -   **`calculate_percentiles(data: List[float], percentiles_to_calculate: List[int]) -> Dict[str, float]`**: 数値データのリストから指定されたパーセンタイル値を計算します。
--   **`calculate_simulation_statistics(completed_requests: List[Request]) -> Dict[str, Union[float, int]]`**: シミュレーション結果（完了/リジェクトされた全タスク）から、総処理数、総リジェクト数、平均キューイング時間、およびキューイング時間の各パーセンタイル値などの統計情報を計算します。
+-   **`calculate_simulation_statistics(completed_requests: List[Request]) -> Dict[str, Union[float, int, Dict[str, int]]]`**: シミュレーション結果（完了/リジェクトされた全タスク）から、総処理数、総リジェクト数、平均キューイング時間、キューイング時間の各パーセンタイル値、および各外部APIが処理に使用された回数 (`api_usage_counts`) などの統計情報を計算します。
     *(将来的にはAPI呼び出しの成功率や失敗理由などの統計も追加される可能性があります。)*
 
 ### 2.9. `main.py`
@@ -138,9 +138,14 @@ python main.py sample_data_example_user.csv -w 1
   キューイング時間 P75: X.XXXX
   キューイング時間 P90: X.XXXX
   キューイング時間 P99: X.XXXX
+
+  --- API使用回数 ---
+    api_1: Y 回
+    api_2: Z 回
+    ...
 --------------------------
 ```
-(XX は実際の実行結果によって変わります)
+(XX, Y, Z は実際の実行結果によって変わります)
 
 
 ## 4. ディレクトリ構造

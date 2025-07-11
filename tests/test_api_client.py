@@ -44,11 +44,11 @@ class TestAPIClient(unittest.TestCase):
 
         # 1回目のリクエスト (成功)
         response1 = client.make_request({"data": "req1"})
-        self.assertEqual(response1["api_used"], 1)
+        self.assertEqual(response1["api_used_id"], 1)
 
         # 2回目のリクエスト (成功)
         response2 = client.make_request({"data": "req2"})
-        self.assertEqual(response2["api_used"], 1)
+        self.assertEqual(response2["api_used_id"], 1)
 
         # 3回目のリクエスト (レート制限、APIClientはExceptionを出すか、特定のエラーレスポンスを返す)
         # 現在の実装では、make_requestは全APIがダメになるまでフォールバックしようとする。
@@ -73,7 +73,7 @@ class TestAPIClient(unittest.TestCase):
         # 1回目: API 1 を使用
         print("Fallback test: Request 1")
         response1 = client.make_request({"data": "req1_api1"})
-        self.assertEqual(response1["api_used"], 1)
+        self.assertEqual(response1["api_used_id"], 1)
         self.assertEqual(len(client.request_timestamps[0]), 1)
         self.assertEqual(len(client.request_timestamps[1]), 0)
 
@@ -81,7 +81,7 @@ class TestAPIClient(unittest.TestCase):
         # 2回目: API 1 はレート制限、API 2 を使用
         print("Fallback test: Request 2")
         response2 = client.make_request({"data": "req2_api2"})
-        self.assertEqual(response2["api_used"], 2)
+        self.assertEqual(response2["api_used_id"], 2)
         self.assertEqual(len(client.request_timestamps[0]), 1) # API1のカウントは変わらず
         self.assertEqual(len(client.request_timestamps[1]), 1) # API2がカウントアップ
 
@@ -136,7 +136,7 @@ class TestAPIClient(unittest.TestCase):
 
         # 1回目のリクエスト (成功)
         response1 = client.make_request({"data": "req1"})
-        self.assertEqual(response1["api_used"], 1)
+        self.assertEqual(response1["api_used_id"], 1)
         self.assertEqual(len(client.request_timestamps[0]), 1)
 
         # 2回目のリクエスト (レート制限)
@@ -151,7 +151,7 @@ class TestAPIClient(unittest.TestCase):
 
         # 3回目のリクエスト (レート制限解除され成功)
         response3 = client.make_request({"data": "req3"})
-        self.assertEqual(response3["api_used"], 1)
+        self.assertEqual(response3["api_used_id"], 1)
         self.assertEqual(len(client.request_timestamps[0]), 1) # 古いのは消え、新しいのが入る
 
 
@@ -185,7 +185,7 @@ class TestAPIClient(unittest.TestCase):
     #     response = client.make_request({"data": "req_fallback_429"})
 
     #     self.assertEqual(response["status"], "success")
-    #     self.assertEqual(response["api_used"], 2) # API2が使われた
+    #     self.assertEqual(response["api_used_id"], 2) # API2が使われた
     #     mock_post.assert_any_call(client.api_endpoints[0], json={"data": "req_fallback_429"})
     #     mock_post.assert_any_call(client.api_endpoints[1], json={"data": "req_fallback_429"})
     #     self.assertEqual(mock_post.call_count, 2)
@@ -289,12 +289,14 @@ class TestAPIClient(unittest.TestCase):
         mock_time_module.time.side_effect = [0.0, 0.1, 0.2, 0.3, 0.4] # time.time()が返す値
 
         # Request 1 (allowed)
-        client.make_request({"data": "req1"})
-        self.assertEqual(len(client.request_timestamps[0]), 1)
+        response1 = client.make_request({"data": "req1"}) # キー名を修正
+        self.assertEqual(response1["api_used_id"], 1)
+
 
         # Request 2 (allowed)
-        client.make_request({"data": "req2"})
-        self.assertEqual(len(client.request_timestamps[0]), 2)
+        response2 = client.make_request({"data": "req2"}) # キー名を修正
+        self.assertEqual(response2["api_used_id"], 1)
+
 
         # Request 3 (rate limited)
         with self.assertRaisesRegex(Exception, "All external APIs are unavailable or rate limited."):
@@ -312,7 +314,7 @@ class TestAPIClient(unittest.TestCase):
 
         # Request 1: Uses API 1
         response1 = client.make_request({"data": "req1"})
-        self.assertEqual(response1["api_used"], 1)
+        self.assertEqual(response1["api_used_id"], 1) # キー名を修正
         self.assertEqual(len(client.request_timestamps[0]), 1)
         self.assertEqual(len(client.request_timestamps[1]), 0)
         # client.current_api_index should be 0 after this if API 1 was chosen and successful
@@ -321,7 +323,7 @@ class TestAPIClient(unittest.TestCase):
         # The client.current_api_index might influence starting point.
         # Let's assume it tries API 1 (index 0) first due to current_api_index or default logic
         response2 = client.make_request({"data": "req2"})
-        self.assertEqual(response2["api_used"], 2)
+        self.assertEqual(response2["api_used_id"], 2) # キー名を修正
         self.assertEqual(len(client.request_timestamps[0]), 1) # API 1 still has its one request
         self.assertEqual(len(client.request_timestamps[1]), 1) # API 2 now has one request
         # client.current_api_index should be 1
@@ -354,7 +356,8 @@ class TestAPIClient(unittest.TestCase):
         mock_time_module.time.return_value = 0.0
 
         # Request 1 (uses API 1)
-        client.make_request({"data": "req1"})
+        response1 = client.make_request({"data": "req1"}) # キー名を修正
+        self.assertEqual(response1["api_used_id"], 1)
         self.assertEqual(len(client.request_timestamps[0]), 1)
         self.assertEqual(client.request_timestamps[0][0], 0.0)
 
@@ -369,7 +372,7 @@ class TestAPIClient(unittest.TestCase):
 
         # Request 3 (should be allowed as rate limit for timestamp 0.0 has expired)
         response3 = client.make_request({"data": "req3"})
-        self.assertEqual(response3["api_used"], 1)
+        self.assertEqual(response3["api_used_id"], 1) # キー名を修正
         self.assertEqual(len(client.request_timestamps[0]), 1) # Old one popped, new one added
         self.assertEqual(client.request_timestamps[0][0], 60.1)
 

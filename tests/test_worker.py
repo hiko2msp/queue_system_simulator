@@ -25,7 +25,7 @@ class TestWorkerWithAPIClient(unittest.TestCase):
         self.task_queue.enqueue(req1)
 
         # APIClient.make_request が成功レスポンスを返すように設定
-        expected_api_response = {"status": "success", "api_used": 1, "data": "response_data"}
+        expected_api_response = {"status": "success", "api_used_id": 1, "data": "response_data"}
         self.mock_api_client.make_request.return_value = expected_api_response
 
         # 時刻 0.0: タスク開始
@@ -36,6 +36,7 @@ class TestWorkerWithAPIClient(unittest.TestCase):
         self.assertIsNotNone(self.worker.current_task)
         self.assertEqual(self.worker.current_task, req1)
         self.assertEqual(self.worker.current_task.start_processing_time_by_worker, 0.0)
+        self.assertEqual(self.worker.current_task.used_api_id, 1) # used_api_idが設定されたか確認
         self.assertEqual(self.worker.busy_until, 2.0) # APIコール時間とは別に処理時間がある想定
         self.assertEqual(self.worker.task_processing_status, "success")
         self.assertTrue(self.worker.is_busy(1.0))
@@ -111,7 +112,7 @@ class TestWorkerOriginalLogicWithMockAPI(unittest.TestCase):
         self.task_queue: FifoQueue[Request] = FifoQueue()
         self.mock_api_client = MagicMock() # APIClientをモック
         # APIClient.make_requestが常に成功を返すようにデフォルト設定
-        self.mock_api_client.make_request.return_value = {"status": "success", "api_used": 1, "data": "dummy_response"}
+        self.mock_api_client.make_request.return_value = {"status": "success", "api_used_id": 1, "data": "dummy_response"}
         self.worker = Worker(worker_id=1, task_queue=self.task_queue, api_client=self.mock_api_client)
 
 

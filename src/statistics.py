@@ -1,6 +1,8 @@
 from typing import List, Dict, Union
+from collections import defaultdict # defaultdict をインポート
 import numpy as np
 from src.data_model import Request
+from config.settings import NUM_EXTERNAL_APIS # NUM_EXTERNAL_APIS をインポート
 
 def calculate_queuing_times(processed_requests: List[Request]) -> List[float]:
     """
@@ -106,4 +108,24 @@ def calculate_simulation_statistics(completed_requests: List[Request]) -> Dict[s
         stats.update(percentile_results)
 
     # NaNを文字列 "NaN" に変換するかどうかは出力時に検討。ここではfloatのまま。
+
+    # API使用回数の集計
+    api_usage_counts: Dict[str, int] = defaultdict(int)
+    for i in range(1, NUM_EXTERNAL_APIS + 1): # 存在しうる全てのAPI IDをキーとして初期化
+        api_usage_counts[f"api_{i}"] = 0
+
+    for req in processed_requests:
+        if req.used_api_id is not None:
+            api_key = f"api_{req.used_api_id}"
+            if api_key in api_usage_counts: # settingsで定義された範囲内のIDか確認
+                api_usage_counts[api_key] += 1
+            else:
+                # settingsで定義された範囲外のIDが記録されている場合 (通常は起こりえない)
+                print(f"Warning: Request {req.user_id} used an unexpected API ID: {req.used_api_id}")
+                # 未知のAPI IDとしてカウントすることも可能
+                # api_usage_counts[f"api_unknown_{req.used_api_id}"] = api_usage_counts.get(f"api_unknown_{req.used_api_id}", 0) + 1
+
+
+    stats["api_usage_counts"] = dict(api_usage_counts) # defaultdictを通常のdictに変換して返す
+
     return stats

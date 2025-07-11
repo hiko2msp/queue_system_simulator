@@ -89,8 +89,11 @@ class Worker:
                 # 実際のAPI呼び出しは時間がかからないと仮定し、シミュレーション上の処理時間は
                 # task_to_process.processing_time で表現される純粋な処理時間とする。
                 # APIのレートリミットによる待機はAPIClient側で発生する。
-                api_call_status, _ = self._perform_api_call({"user_id": self.current_task.user_id, "data": "sample_payload"})
+                api_call_status, response_data = self._perform_api_call({"user_id": self.current_task.user_id, "data": "sample_payload"})
                 self.task_processing_status = api_call_status
+
+                if api_call_status == "success" and response_data:
+                    self.current_task.used_api_id = response_data.get("api_used_id")
 
                 # API呼び出しが失敗した場合でも、タスクの処理時間 (processing_time) は消費すると仮定。
                 # もしAPI失敗時に即座にタスク完了としたい場合は、busy_until の設定を調整する。
