@@ -12,27 +12,49 @@
 
 ## 2. 主要コンポーネント
 
-### 2.1. `src/data_model.py`
--   **`Request`**: シミュレーション内の単一のリクエストを表すデータクラス。リクエストID、到着時刻、処理時間、およびシミュレーション中に記録される各種タイムスタンプ（キュー到着時刻、処理開始/終了時刻）を保持します。
+### 2.1. 設定ファイル (`config/settings.py`)
+シミュレーションの動作を制御するための設定値を定義します。
+-   `NUM_EXTERNAL_APIS` (int): ワーカーが利用する外部APIの総数。
+-   `EXTERNAL_API_RPM_LIMIT` (int): 各外部APIの1分あたりのリクエスト上限数（RPM: Requests Per Minute）。
 
-### 2.2. `src/csv_parser.py`
+### 2.2. `src/data_model.py`
+-   **`Request`**: シミュレーション内の単一のリクエストを表すデータクラス。リクエストID、到着時刻、処理時間、およびシミュレーション中に記録される各種タイムスタンプ（キュー到着時刻、処理開始/終了時刻）を保持します。
+    *(将来的にはAPI呼び出しの成否や試行回数などの情報も追加される可能性があります。)*
+
+### 2.3. `src/csv_parser.py`
 -   **`parse_csv(file_path: str) -> List[Request]`**: 指定されたCSVファイルを読み込み、`Request`オブジェクトのリストに変換します。
 
-### 2.3. `src/queue_manager.py`
+### 2.4. `src/queue_manager.py`
 -   **`FifoQueue[T]`**: FIFO（先入れ先出し）方式のジェネリックキュークラス。オプションで最大サイズを設定でき、アドミッションコントロールの基本的な機能（満杯ならエンキューしない）を提供します。
 
-### 2.4. `src/worker.py`
--   **`Worker`**: タスクキューから`Request`を取得し、指定された処理時間だけ処理をシミュレートするクラス。各ワーカーは同時に1つのタスクのみを処理します。
+### 2.5. `src/api_client.py`
+-   **`APIClient`**: 外部APIへのアクセスを管理するクライアントクラス。以下の責務を持ちます:
+    -   `config/settings.py` からAPIの数とRPM制限を読み込みます。
+    -   複数のAPIエンドポイントを管理します。
+    -   各APIエンドポイントへのリクエストレートを追跡し、RPM制限を超えないように制御します。
+    -   あるAPIエンドポイントがレート制限に達した場合（または429エラーを返した場合）、自動的に次の利用可能なAPIエンドポイントにフォールバックします。
+    -   すべてのAPIエンドポイントが利用不可の場合、リクエストは失敗します。
 
-### 2.5. `src/simulator.py`
--   **`Simulator`**: シミュレーション全体の制御を行うコアクラス。リクエストの到着イベント、ワーカーによるタスク処理イベントを管理し、イベントドリブンで時間を進めます。入力されたリクエストリスト、ワーカー数、キュー設定に基づいてシミュレーションを実行し、完了（またはリジェクト）したタスクのリストを返します。
+### 2.6. `src/worker.py`
+-   **`Worker`**: タスクキューから`Request`を取得し、処理を実行するクラス。
+    -   各ワーカーは `APIClient` のインスタンスを利用して、タスク処理の一環として外部API呼び出しをシミュレートします。
+    -   API呼び出しが成功した場合、タスクは正常処理されたとみなされます。
+    -   API呼び出しが（すべてのフォールバックを試した結果）失敗した場合、タスクは失敗として記録されます（現在の実装では主にコンソールログに出力）。
+    -   各ワーカーは同時に1つのタスクのみを処理します。
 
-### 2.6. `src/statistics.py`
+### 2.7. `src/simulator.py`
+-   **`Simulator`**: シミュレーション全体の制御を行うコアクラス。
+    -   `APIClient` の単一インスタンスを作成し、すべての `Worker` インスタンスで共有させます。
+    -   リクエストの到着イベント、ワーカーによるタスク処理イベント（API呼び出しを含む）を管理し、イベントドリブンで時間を進めます。
+    -   入力されたリクエストリスト、ワーカー数、キュー設定に基づいてシミュレーションを実行し、完了（またはリジェクト）したタスクのリストを返します。
+
+### 2.8. `src/statistics.py`
 -   **`calculate_queuing_times(processed_requests: List[Request]) -> List[float]`**: 処理済みリクエストのリストから、各リクエストのキューイング時間（キュー到着から処理開始までの時間）を計算します。
 -   **`calculate_percentiles(data: List[float], percentiles_to_calculate: List[int]) -> Dict[str, float]`**: 数値データのリストから指定されたパーセンタイル値を計算します。
 -   **`calculate_simulation_statistics(completed_requests: List[Request]) -> Dict[str, Union[float, int]]`**: シミュレーション結果（完了/リジェクトされた全タスク）から、総処理数、総リジェクト数、平均キューイング時間、およびキューイング時間の各パーセンタイル値などの統計情報を計算します。
+    *(将来的にはAPI呼び出しの成功率や失敗理由などの統計も追加される可能性があります。)*
 
-### 2.7. `main.py`
+### 2.9. `main.py`
 -   コマンドラインインターフェースを提供するエントリーポイントスクリプト。
 -   CSVファイルのパス、ワーカー数、キューサイズを引数として受け取ります。
 -   各コンポーネントを呼び出してシミュレーションを実行し、結果の統計情報を標準出力に表示します。
@@ -127,19 +149,24 @@ python main.py sample_data_example_user.csv -w 1
 .
 ├── main.py                 # メイン実行スクリプト
 ├── sample_requests.csv     # サンプル入力データ
-├── requirements.txt        # 依存ライブラリ
+├── pyproject.toml          # プロジェクト設定 (uv用)
+├── uv.lock                 # 依存関係ロックファイル (uv用)
+├── config/                 # 設定ファイルディレクトリ
+│   └── settings.py         # API設定など
 ├── scripts/                # スクリプトディレクトリ
 │   └── generate_sample_data.py # サンプルデータ生成スクリプト
 ├── src/                    # ソースコードディレクトリ
 │   ├── __init__.py
+│   ├── api_client.py       # APIクライアント (レート制限、フォールバック)
 │   ├── csv_parser.py       # CSVパース処理
 │   ├── data_model.py       # Requestデータクラス定義
 │   ├── queue_manager.py    # FifoQueueクラス定義
 │   ├── simulator.py        # Simulatorコアロジック
 │   ├── statistics.py       # 統計計算処理
-│   └── worker.py           # Workerクラス定義
+│   └── worker.py           # Workerクラス定義 (APIClient使用)
 └── tests/                  # テストコードディレクトリ
     ├── __init__.py
+    ├── test_api_client.py
     ├── test_csv_parser.py
     ├── test_data_model.py
     ├── test_queue_manager.py
@@ -148,7 +175,19 @@ python main.py sample_data_example_user.csv -w 1
     └── test_worker.py
 ```
 
-## 5. 将来の拡張（TODOコメントより）
+## 5. 設定方法
+
+### 5.1. 外部API設定
+`config/settings.py` ファイルで以下の定数を変更することで、外部APIのシミュレーション動作を調整できます。
+
+- `NUM_EXTERNAL_APIS`: 利用する外部APIの総数。ワーカーはこれらのAPIに対してフォールバックを行います。
+  デフォルト: `5`
+- `EXTERNAL_API_RPM_LIMIT`: 各外部APIが処理できる1分あたりのリクエスト数の上限。この上限を超えると、APIクライアントは次の利用可能なAPIにフォールバックしようとします。
+  デフォルト: `60`
+
+これらの設定は、シミュレーター起動時に読み込まれ、`APIClient` の動作に反映されます。
+
+## 6. 将来の拡張（TODOコメントより）
 -   複数のキュータイプ（例: 優先度キュー）のサポート。
 -   より高度なアドミッションコントロール戦略のパラメータ化と実装。
 ```
