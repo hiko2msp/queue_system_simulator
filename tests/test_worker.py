@@ -1,13 +1,14 @@
 import unittest
 from unittest.mock import MagicMock, patch
 from src.worker import Worker
-from src.queue_manager import FifoQueue
+from src.queue_manager import FifoQueue, PriorityQueueStrategy # PriorityQueueStrategy をインポート
 from src.data_model import Request
 # from src.api_client import APIClient # WorkerはAPIClientのインスタンスを取るが、テストではモックする
 
 class TestWorkerWithAPIClient(unittest.TestCase):
     def setUp(self):
-        self.task_queue = FifoQueue[Request]()
+        # self.task_queue = FifoQueue[Request]() # 旧
+        self.task_queue = PriorityQueueStrategy[Request]() # 新
         # APIClientをモック
         self.mock_api_client = MagicMock()
         # Workerの初期化時にモックAPIClientを渡す
@@ -109,7 +110,8 @@ class TestWorkerWithAPIClient(unittest.TestCase):
 # 既存のテストを活かすための修正例（TestWorkerのsetUpを変更）
 class TestWorkerOriginalLogicWithMockAPI(unittest.TestCase):
     def setUp(self):
-        self.task_queue: FifoQueue[Request] = FifoQueue()
+        # self.task_queue: FifoQueue[Request] = FifoQueue() # 旧
+        self.task_queue: PriorityQueueStrategy[Request] = PriorityQueueStrategy() # 新
         self.mock_api_client = MagicMock() # APIClientをモック
         # APIClient.make_requestが常に成功を返すようにデフォルト設定
         self.mock_api_client.make_request.return_value = {"status": "success", "api_used_id": 1, "data": "dummy_response"}

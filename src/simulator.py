@@ -1,6 +1,6 @@
-from typing import List, Optional
+from typing import List, Optional, Union, Any
 from src.data_model import Request
-from src.queue_manager import FifoQueue
+from src.queue_manager import FifoQueue, PriorityQueueStrategy # PriorityQueueStrategy をインポート
 from src.worker import Worker
 from src.api_client import APIClient # APIClient をインポート
 # NUM_EXTERNAL_APIS と EXTERNAL_API_RPM_LIMIT は APIClient が config から読むので Simulator で直接読む必要はない
@@ -28,7 +28,11 @@ class Simulator:
 
         # TODO: 将来的には複数のキューや異なるキュータイプ (例: 優先度キュー) も考慮。
         # その場合、task_queue の管理方法や Worker へのキューの渡し方を変更する必要がある。
-        self.task_queue: FifoQueue[Request] = FifoQueue(max_size=queue_max_size)
+        # self.task_queue: FifoQueue[Request] = FifoQueue(max_size=queue_max_size) # 旧 FifoQueue
+        self.task_queue: PriorityQueueStrategy[Request] = PriorityQueueStrategy()
+        # 注意: 現在のPriorityQueueStrategyはmax_sizeをコンストラクタで受け付けないため、
+        # queue_max_size引数はPriorityQueueStrategy利用時は無視されます。
+        # 必要であればPriorityQueueStrategyを改修し、内部キューのサイズ制限を設定できるようにする必要があります。
 
         # APIClientのインスタンスを作成 (全ワーカーで共有)
         self.api_client = APIClient()
