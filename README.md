@@ -147,12 +147,62 @@ python main.py sample_data_example_user.csv -w 1
 ```
 (XX, Y, Z は実際の実行結果によって変わります)
 
+### 3.4. ログ出力とグラフ描画
+
+シミュレーション実行中に、システムの詳細なメトリクスがCSVファイルに記録されます。
+また、そのログファイルから各種パフォーマンスグラフを生成するスクリプトが提供されています。
+
+**ログ出力:**
+
+-   シミュレーションを実行すると、デフォルトでカレントディレクトリに `simulator_log.csv` という名前のログファイルが生成されます。
+-   ログファイルには、一定時間間隔（デフォルトではシミュレーション時間で60秒ごと）で以下の情報が出力されます。
+    -   `Timestamp (min)`: シミュレーション開始からの経過時間（分）
+    -   `QueueName`: キューの名前（例: "priority", "normal"）
+    -   `TasksInQueue`: その時点でのキュー内のタスク数
+    -   `CumulativeRejected`: 累計リジェクトタスク数
+    -   `CumulativeSucceeded`: 累計成功タスク数
+    -   `CumulativeApiErrors`: 累計APIエラー発生回数
+    -   `ApiThroughput (req/min)`: 直近のログ記録間隔におけるAPIスループット（リクエスト/分）
+-   ログファイル名と記録間隔は、`Simulator`クラスの初期化時に変更可能です（`main.py`を修正する場合）。
+
+**グラフ描画:**
+
+提供されている `plot_graphs.py` スクリプトを使用すると、`simulator_log.csv` から以下のメトリクスの時系列グラフを生成し、画像ファイルとして保存できます。
+
+-   キューごとのタスク数
+-   累計リジェクト数
+-   累計成功数
+-   累計APIエラー数
+-   APIスループット
+
+**グラフ描画スクリプトの実行方法:**
+
+1.  まず、シミュレーターを実行して `simulator_log.csv` を生成します。
+    ```bash
+    python main.py sample_requests.csv -w 2 -q 10
+    ```
+2.  次に、`plot_graphs.py` を実行します。
+    ```bash
+    python plot_graphs.py
+    ```
+3.  スクリプトが完了すると、カレントディレクトリに `graphs/` というディレクトリが作成され、その中に各メトリクスのPNG画像ファイルが保存されます。
+
+**必要なライブラリ:**
+グラフ描画スクリプトを実行するには、`matplotlib` と `pandas` が必要です。これらは `uv sync` コマンドでインストールされるように `pyproject.toml` に記述されています。
+```bash
+uv sync
+```
+もし個別にインストールする場合は、以下のようにします。
+```bash
+pip install matplotlib pandas
+```
 
 ## 4. ディレクトリ構造
 
 ```
 .
 ├── main.py                 # メイン実行スクリプト
+├── plot_graphs.py          # ログからグラフを生成するスクリプト
 ├── sample_requests.csv     # サンプル入力データ
 ├── pyproject.toml          # プロジェクト設定 (uv用)
 ├── uv.lock                 # 依存関係ロックファイル (uv用)
@@ -178,6 +228,7 @@ python main.py sample_data_example_user.csv -w 1
     ├── test_simulator.py
     ├── test_statistics.py
     └── test_worker.py
+└── graphs/                 # (plot_graphs.py によって生成されるグラフ画像保存ディレクトリ)
 ```
 
 ## 5. 設定方法

@@ -26,6 +26,8 @@ class Request:
         finish_processing_time_by_worker (float): ワーカーがこのリクエストの処理を完了したシミュレーション相対時刻。
                                                  ワーカーによって設定される。
         used_api_id (Optional[int]): 処理に使用されたAPIのID (1からN)。
+        api_error_occurred (bool): API呼び出し中にエラーが発生したかどうかを示すフラグ。
+                                   デフォルトはFalse。
     """
 
     user_id: str
@@ -40,3 +42,4 @@ class Request:
     start_processing_time_by_worker: float = 0.0
     finish_processing_time_by_worker: float = 0.0
     used_api_id: int | None = None
+    api_error_occurred: bool = False

@@ -34,22 +34,30 @@ class Worker:
         self.busy_until: float = 0.0
         self.task_processing_status: str | None = None
 
-    def _perform_api_call(self, task_data: dict) -> tuple[str, dict | None]:
+    def _perform_api_call(self, task: Request, task_data: dict) -> tuple[str, dict | None]: # 'task' 引数を追加
         """
         APIクライアントを使用して外部API呼び出しを実行する。
-        成功なら ("success", response_data), 失敗なら ("failed_api_limit", None) を返す。
+        成功なら ("success", response_data),
+        APIエラーなら ("failed_api_error", None), ※ APIClientがrequest_obj.api_error_occurredをTrueにする
+        全API試行失敗なら ("failed_all_apis", None) を返す。
         """
         try:
-            response = self.api_client.make_request(task_data)
-            # RequestモデルにAPI使用回数や使用したAPIの情報を記録することを検討
-            # if self.current_task:
-            #     self.current_task.api_used = response.get("api_used")
-            return "success", response
+            # APIClient.make_request に task オブジェクトを渡す
+            response = self.api_client.make_request(task, task_data)
+            if response:
+                # task.api_error_occurred は APIClient 側で設定される
+                return "success", response
+            else:
+                # make_request が None を返した場合 (全APIが利用不可またはレート制限)
+                # task.api_error_occurred は、もしサーバーエラーが原因ならTrueになっているはず
+                return "failed_all_apis", None
         except Exception as e:
-            print(f"Worker {self.worker_id}: API call failed for task after all retries: {e}")
-            # if self.current_task:
-            #     self.current_task.failure_reason = str(e)
-            return "failed_api_limit", None
+            # このExceptionは通常、make_request内でキャッチされず、より深刻な問題を示唆するかもしれないが、
+            # make_request が None を返すようになったため、ここに来るケースは減るはず。
+            # しかし、予期せぬエラーのために残しておく。
+            print(f"Worker {self.worker_id}: Unexpected error during API call for task {task.user_id}: {e}")
+            task.api_error_occurred = True # 予期せぬエラーもAPIエラーとしてマーク
+            return "failed_unexpected_error", None
 
     def process_task(self, current_time: float) -> Request | None:
         """
@@ -86,21 +94,18 @@ class Worker:
             if task_to_process:
                 self.current_task = task_to_process
                 self.current_task.start_processing_time_by_worker = current_time
+                self.current_task.api_error_occurred = False # 新しいタスクなのでリセット
 
-                # API呼び出しを実行
-                # 実際のAPI呼び出しは時間がかからないと仮定し、シミュレーション上の処理時間は
-                # task_to_process.processing_time で表現される純粋な処理時間とする。
-                # APIのレートリミットによる待機はAPIClient側で発生する。
                 api_call_status, response_data = self._perform_api_call(
+                    self.current_task, # current_task を渡す
                     {"user_id": self.current_task.user_id, "data": "sample_payload"}
                 )
                 self.task_processing_status = api_call_status
 
                 if api_call_status == "success" and response_data:
                     self.current_task.used_api_id = response_data.get("api_used_id")
+                # api_error_occurred は _perform_api_call -> api_client.make_request で設定される
 
-                # API呼び出しが失敗した場合でも、タスクの処理時間 (processing_time) は消費すると仮定。
-                # もしAPI失敗時に即座にタスク完了としたい場合は、busy_until の設定を調整する。
                 self.busy_until = current_time + self.current_task.processing_time
 
                 print(
