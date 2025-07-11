@@ -1,18 +1,20 @@
-import time
+import time # time モジュールは simulator_time_func が提供されない場合のフォールバックや型ヒントのために残すことも検討できますが、今回は直接は使用しません。
 from collections import deque
+from typing import Callable # Callable をインポート
 from config.settings import NUM_EXTERNAL_APIS, EXTERNAL_API_RPM_LIMIT
 
 class APIClient:
-    def __init__(self):
+    def __init__(self, simulator_time_func: Callable[[], float]): # simulator_time_func を引数に追加し、型ヒントも設定
         self.num_apis = NUM_EXTERNAL_APIS
         self.rpm_limit = EXTERNAL_API_RPM_LIMIT
         self.api_endpoints = [f"https://api.example.com/v1/endpoint{i+1}" for i in range(self.num_apis)]
         self.request_timestamps = [deque() for _ in range(self.num_apis)]
         self.current_api_index = 0
+        self.simulator_time_func = simulator_time_func # 時間取得関数を保存
 
     def _can_make_request(self, api_index):
         """指定されたAPIがRPM制限内か確認する"""
-        now = time.time()
+        now = self.simulator_time_func() # time.time() の代わりに simulator_time_func を使用
         # 1分以上前のタイムスタンプを削除
         while (self.request_timestamps[api_index] and
                now - self.request_timestamps[api_index][0] > 60):
@@ -33,7 +35,7 @@ class APIClient:
             if self._can_make_request(api_index_to_try):
                 # 実際のAPIコールをシミュレート
                 print(f"Making request to API {api_index_to_try + 1} with data: {data}")
-                self.request_timestamps[api_index_to_try].append(time.time())
+                self.request_timestamps[api_index_to_try].append(self.simulator_time_func()) # time.time() の代わりに simulator_time_func を使用
 
                 # ここで実際のAPI呼び出しを行う (例: requests.post)
                 # response = requests.post(self.api_endpoints[api_index_to_try], json=data)
@@ -84,16 +86,25 @@ class APIClient:
 
 if __name__ == '__main__':
     # テスト用
-    client = APIClient()
+    # APIClient のコンストラクタが変更されたため、テストコードも修正が必要
+    # ダミーの時間関数を定義
+    current_sim_time = 0
+    def get_dummy_time():
+        global current_sim_time
+        # time.sleep(0.1) の代わりにシミュレーション時間を進める
+        current_sim_time += 0.1 # 例: 0.1秒ずつ進む
+        return current_sim_time
+
+    client = APIClient(simulator_time_func=get_dummy_time) # 変更: simulator_time_func を渡す
     for i in range(NUM_EXTERNAL_APIS * EXTERNAL_API_RPM_LIMIT + 5):
         try:
-            print(f"Attempt {i+1}:")
+            print(f"Attempt {i+1}: Current Sim Time: {current_sim_time:.2f}") # シミュレーション時刻も表示
             response = client.make_request({"payload": f"data_{i}"})
             print(response)
         except Exception as e:
             print(e)
             break
-        time.sleep(0.1) # リクエスト間の短い遅延
+        # time.sleep(0.1) # 実際の時間は待たない（get_dummy_timeで進むため）
 
     print("\n--- Testing Fallback ---")
     # RPM制限を意図的に超えさせてフォールバックをテストする
