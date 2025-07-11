@@ -45,7 +45,32 @@
 pip install -r requirements.txt
 ```
 
-### 3.2. シミュレーションの実行
+### 3.2. サンプルデータの生成 (オプション)
+テストやデモンストレーション用にサンプルデータを生成するスクリプトが用意されています。
+
+```bash
+python scripts/generate_sample_data.py <user_id>
+```
+**引数:**
+- `<user_id>`: 生成されるデータのユーザーID (例: `test_user`, `user123`)。
+
+**実行例:**
+```bash
+python scripts/generate_sample_data.py my_test_user
+```
+これにより、カレントディレクトリに `sample_data_my_test_user.csv` という名前のCSVファイルが生成されます。
+このファイルには、指定されたユーザーIDで、ランダムなリクエスト時刻（特定の日付内で時間はランダム）と正規分布に従う処理時間を持つ10〜40件のリクエストデータが含まれます。
+
+**生成されるCSVのフォーマット例:**
+```csv
+user_id,request_time,processing_time
+my_test_user,1698278400.0,18
+my_test_user,1698307200.0,22
+...
+```
+ここで `request_time` はUnixタイムスタンプ (float)、`processing_time` はミリ秒単位の処理時間 (int) です。
+
+### 3.3. シミュレーションの実行
 ルートディレクトリにある `main.py` を使用してシミュレーションを実行します。
 
 ```bash
@@ -71,7 +96,30 @@ python main.py sample_requests.csv -w 2 -q 10
 
 # サンプルCSVをワーカー1台、キュー無制限で実行
 python main.py sample_requests.csv -w 1
+
+# 生成したサンプルデータで実行
+python scripts/generate_sample_data.py example_user
+python main.py sample_data_example_user.csv -w 1
 ```
+
+**期待される出力例 (統計情報):**
+```
+シミュレーション開始: sample_data_example_user.csv
+ワーカー数: 1, キュー最大サイズ: 無制限
+
+--- シミュレーション統計 ---
+  総リクエスト数 (入力): XX
+  処理完了リクエスト数: XX
+  リジェクトリクエスト数: X
+  平均キューイング時間: X.XXXX
+  キューイング時間 P50: X.XXXX
+  キューイング時間 P75: X.XXXX
+  キューイング時間 P90: X.XXXX
+  キューイング時間 P99: X.XXXX
+--------------------------
+```
+(XX は実際の実行結果によって変わります)
+
 
 ## 4. ディレクトリ構造
 
@@ -80,6 +128,8 @@ python main.py sample_requests.csv -w 1
 ├── main.py                 # メイン実行スクリプト
 ├── sample_requests.csv     # サンプル入力データ
 ├── requirements.txt        # 依存ライブラリ
+├── scripts/                # スクリプトディレクトリ
+│   └── generate_sample_data.py # サンプルデータ生成スクリプト
 ├── src/                    # ソースコードディレクトリ
 │   ├── __init__.py
 │   ├── csv_parser.py       # CSVパース処理
