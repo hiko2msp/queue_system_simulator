@@ -1,15 +1,25 @@
 // src/content.ts
 
-let originalTexts = new Map<Node, string>();
-let currentlyTranslatingNode: Node | null = null;
-let textNodes: Node[] = [];
-let textNodeIndex = 0;
+// A Map to store original text content of nodes before translation
+const originalTexts = new Map<Node, string>();
+// A queue of text nodes to be translated
+let textNodesToTranslate: Node[] = [];
+// Index to keep track of the current node being processed
+let currentNodeIndex = 0;
+// The node currently being translated
+let activeTranslatingNode: Node | null = null;
 
-function collectTextNodes(root: Node) {
+/**
+ * Traverses the DOM from a given root element and collects all non-empty text nodes
+ * that are not inside <script> or <style> tags.
+ * @param root The root element to start traversal from.
+ * @returns An array of text nodes.
+ */
+function collectTextNodes(root: Node): Node[] {
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
     acceptNode: (node: Text) => {
-      // Ignore empty/whitespace-only text nodes and script/style content
-      if (node.nodeValue?.trim() && !node.parentElement?.closest('script, style')) {
+      // Ignore empty/whitespace-only text nodes and content of script/style tags
+      if (node.nodeValue?.trim() && !node.parentElement?.closest('script, style, textarea')) {
         return NodeFilter.FILTER_ACCEPT;
       }
       return NodeFilter.FILTER_REJECT;
@@ -17,62 +27,82 @@ function collectTextNodes(root: Node) {
   });
 
   const nodes: Node[] = [];
-  while(walker.nextNode()) {
+  while (walker.nextNode()) {
     nodes.push(walker.currentNode);
   }
   return nodes;
 }
 
-function startTranslation() {
-  textNodes = collectTextNodes(document.body);
-  translateNextNode();
-}
-
+/**
+ * Kicks off the translation for the next node in the queue.
+ */
 function translateNextNode() {
-  if (textNodeIndex >= textNodes.length) {
-    console.log('All text nodes translated.');
+  if (currentNodeIndex >= textNodesToTranslate.length) {
+    console.log('All text nodes have been processed.');
     return;
   }
 
-  const node = textNodes[textNodeIndex];
-  if (node.nodeValue) {
-    currentlyTranslatingNode = node;
-    originalTexts.set(node, node.nodeValue); // Save original text
-    node.nodeValue = '...'; // Placeholder for translation
-    chrome.runtime.sendMessage({ type: 'translate', text: originalTexts.get(node) });
+  const node = textNodesToTranslate[currentNodeIndex];
+  const originalText = node.nodeValue;
+
+  if (originalText) {
+    activeTranslatingNode = node;
+    originalTexts.set(node, originalText); // Save original text
+    node.nodeValue = '[...translating]';   // Set placeholder
+    chrome.runtime.sendMessage({ type: 'translate', text: originalText });
   } else {
-    // Skip node if it has no value and move to the next one
-    textNodeIndex++;
+    // If node has no text, skip it and move to the next one
+    currentNodeIndex++;
     translateNextNode();
   }
 }
 
-chrome.runtime.onMessage.addListener((request) => {
-  if (currentlyTranslatingNode) {
-    if (request.type === 'translationStream') {
-      if (currentlyTranslatingNode.nodeValue === '...') {
-        currentlyTranslatingNode.nodeValue = ''; // Clear placeholder on first chunk
+/**
+ * Handles incoming messages from the background script.
+ */
+chrome.runtime.onMessage.addListener((request: { type: string, delta?: string, error?: string }) => {
+  if (!activeTranslatingNode) return;
+
+  switch (request.type) {
+    case 'translationStream':
+      // On the first chunk, clear the placeholder text
+      if (activeTranslatingNode.nodeValue === '[...translating]') {
+        activeTranslatingNode.nodeValue = '';
       }
-      currentlyTranslatingNode.nodeValue += request.delta;
-    } else if (request.type === 'translationComplete') {
-      currentlyTranslatingNode = null;
-      textNodeIndex++;
-      translateNextNode(); // Move to the next node
-    } else if (request.type === 'translationError') {
-      console.error('Translation Error:', request.error);
-      // Restore original text on error
-      if (originalTexts.has(currentlyTranslatingNode)) {
-        currentlyTranslatingNode.nodeValue = originalTexts.get(currentlyTranslatingNode) ?? '';
-      }
-      currentlyTranslatingNode = null;
-      textNodeIndex++;
+      // Append the translated chunk
+      activeTranslatingNode.nodeValue += request.delta ?? '';
+      break;
+
+    case 'translationComplete':
+      // Current node is done, move to the next one
+      activeTranslatingNode = null;
+      currentNodeIndex++;
       translateNextNode();
-    }
+      break;
+
+    case 'translationError':
+      console.error('Translation Error:', request.error);
+      // Restore the original text if an error occurs
+      const originalText = originalTexts.get(activeTranslatingNode);
+      if (originalText) {
+        activeTranslatingNode.nodeValue = originalText;
+      }
+      // Move to the next node
+      activeTranslatingNode = null;
+      currentNodeIndex++;
+      translateNextNode();
+      break;
   }
 });
 
-// Start the translation process once the page is fully loaded.
+/**
+ * Initializes the translation process once the page is fully loaded.
+ */
 window.addEventListener('load', () => {
-  // A small delay to ensure all dynamic content is loaded.
-  setTimeout(startTranslation, 1000);
+  // A small delay to ensure that dynamically loaded content is also included.
+  setTimeout(() => {
+    textNodesToTranslate = collectTextNodes(document.body);
+    console.log(`Found ${textNodesToTranslate.length} text nodes to translate.`);
+    translateNextNode();
+  }, 1000);
 });

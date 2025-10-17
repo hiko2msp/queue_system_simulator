@@ -1,18 +1,17 @@
 // src/background.ts
 
-chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+chrome.runtime.onMessage.addListener((request, sender) => {
   if (request.type === 'translate') {
     (async () => {
       const { llmEndpoint } = await chrome.storage.local.get('llmEndpoint');
+      const tabId = sender.tab?.id;
 
       if (!llmEndpoint) {
         console.error('LLM endpoint is not set.');
-        // It's tricky to send an async error back with sendResponse,
-        // so we'll send a message back to the tab.
-        if (sender.tab?.id) {
-          chrome.tabs.sendMessage(sender.tab.id, {
+        if (tabId) {
+          chrome.tabs.sendMessage(tabId, {
             type: 'translationError',
-            error: 'LLM endpoint is not set.',
+            error: 'LLM endpoint is not set. Please set it in the options page.',
           });
         }
         return;
@@ -25,15 +24,19 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
-            model: "gpt-4", // This will be customized later
+            // Note: This model may need to be configurable in the future
+            model: "gemma:2b",
             messages: [{
               role: "user",
-              content: `Translate the following text to Japanese: ${request.text}`
+              content: `Translate the following English text to Japanese, outputting only the translated text: ${request.text}`
             }],
             stream: true,
           }),
         });
 
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
         if (!response.body) {
           throw new Error('Response body is null');
         }
@@ -41,44 +44,49 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
 
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) {
-            break;
-          }
-
-          const chunk = decoder.decode(value, { stream: true });
-          // OpenAI stream chunks are prefixed with "data: "
-          const lines = chunk.split('\n').filter(line => line.startsWith('data: '));
-
-          for (const line of lines) {
-            const jsonStr = line.replace('data: ', '');
-            if (jsonStr === '[DONE]') {
-              if (sender.tab?.id) {
-                chrome.tabs.sendMessage(sender.tab.id, { type: 'translationComplete' });
+        const processStream = async () => {
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) {
+              if (tabId) {
+                chrome.tabs.sendMessage(tabId, { type: 'translationComplete' });
               }
-              continue;
+              break;
             }
-            try {
-              const parsed = JSON.parse(jsonStr);
-              const delta = parsed.choices[0]?.delta?.content;
-              if (delta && sender.tab?.id) {
-                chrome.tabs.sendMessage(sender.tab.id, {
-                  type: 'translationStream',
-                  delta: delta,
-                });
+
+            const chunk = decoder.decode(value, { stream: true });
+            // OpenAI/Ollama stream chunks are prefixed with "data: "
+            const lines = chunk.split('\n').filter(line => line.startsWith('data: '));
+
+            for (const line of lines) {
+              const jsonStr = line.replace('data: ', '');
+              if (jsonStr === '[DONE]') continue;
+
+              try {
+                const parsed = JSON.parse(jsonStr);
+                const delta = parsed.choices[0]?.delta?.content;
+
+                if (delta && tabId) {
+                  chrome.tabs.sendMessage(tabId, {
+                    type: 'translationStream',
+                    delta: delta,
+                  });
+                }
+              } catch (error) {
+                console.error('Error parsing stream chunk:', jsonStr, error);
               }
-            } catch (error) {
-              console.error('Error parsing stream chunk:', error);
             }
           }
-        }
+        };
+        processStream();
+
       } catch (error) {
         console.error('Error fetching from LLM:', error);
-        if (sender.tab?.id) {
-          chrome.tabs.sendMessage(sender.tab.id, {
+        if (tabId) {
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          chrome.tabs.sendMessage(tabId, {
             type: 'translationError',
-            error: `Error fetching from LLM: ${error.message}`,
+            error: `Failed to fetch from LLM: ${errorMessage}`,
           });
         }
       }
